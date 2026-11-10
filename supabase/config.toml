@@ -1,0 +1,7 @@
+[functions.sign-in-with-code]
+verify_jwt = false
+entrypoint = "./functions/sign-in-with-code/index.js"
+
+[functions.teacher-tools]
+verify_jwt = false
+entrypoint = "./functions/teacher-tools/index.js"

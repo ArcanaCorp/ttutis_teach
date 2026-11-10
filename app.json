@@ -26,9 +26,16 @@
     "plugins": [
       "expo-router",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "TTUTIS usa la cámara para escanear los códigos QR de tus alumnos.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#fec907",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
