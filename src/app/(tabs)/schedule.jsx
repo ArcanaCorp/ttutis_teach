@@ -14,11 +14,15 @@ const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 
 export default function Schedule() {
     const { session, staff } = useAuth();
-    const load = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
-        ? getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
-        : Promise.resolve([]), [session?.user?.id, staff?.role, staff?.institutionId, staff?.membershipId]);
+    const userId = session?.user?.id;
+    const staffRole = staff?.role;
+    const institutionId = staff?.institutionId;
+    const membershipId = staff?.membershipId;
+    const load = useCallback(() => staffRole === 'TEACHER' && institutionId
+        ? getTeacherSchedule({ userId, institutionId, membershipId })
+        : Promise.resolve([]), [userId, staffRole, institutionId, membershipId]);
     const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
-    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, load, 5 * 60 * 1000);
+    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, load, 15 * 60 * 1000);
     const schedule = data || [];
     const grouped = days.map((label, index) => ({ label, classes: schedule.filter((item) => Number(item.weekday) === index + 1) })).filter((day) => day.classes.length);
 
