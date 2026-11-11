@@ -59,7 +59,7 @@ export default function AssistantGroups() {
                 {expanded[group.id] && <View style={s.students}>{group.students.map((student) => <Pressable key={student.id} onPress={() => openStudent(student, group)} style={s.student}>
                     <View style={s.avatar}><UserRound size={17} color={theme.colors.primary[700]} /></View><View style={{ flex: 1, gap: 2 }}><TextApp size="sm" variant="medium">{student.name}</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>{student.code || 'Sin código'}</TextApp></View><ChevronRight size={17} color={theme.colors.text.tertiary} />
                 </Pressable>)}{!group.students.length && <TextApp size="sm" color={theme.colors.text.tertiary}>No hay alumnos que coincidan con la búsqueda.</TextApp>}</View>}
-            </View>)}
+            </View>)}</View>
             {!filtered.length && <View style={s.empty}><Users size={28} color={theme.colors.primary[700]} /><TextApp size="md" variant="semibold">{search ? 'Sin resultados' : 'Aún no tienes grupos asignados'}</TextApp><TextApp size="sm" color={theme.colors.text.secondary} align="center">{search ? 'Prueba con otro nombre o grupo.' : 'La institución debe asignarte aulas para que puedas hacer seguimiento. Esta asignación no limita el registro de asistencia institucional.'}</TextApp></View>}
         </View>}
     </Screen>;
