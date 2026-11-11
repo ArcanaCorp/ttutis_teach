@@ -13,7 +13,7 @@ import { theme } from '../../constants/theme';
 const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 export default function Schedule() {
-    const { session, staff } = useAuth();
+    const { session, staff, staffLoading } = useAuth();
     const userId = session?.user?.id;
     const staffRole = staff?.role;
     const institutionId = staff?.institutionId;
@@ -22,14 +22,14 @@ export default function Schedule() {
         ? getTeacherSchedule({ userId, institutionId, membershipId })
         : Promise.resolve([]), [userId, staffRole, institutionId, membershipId]);
     const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
-    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, load, 15 * 60 * 1000);
+    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, load, 15 * 60 * 1000, !staffLoading);
     const schedule = data || [];
     const grouped = days.map((label, index) => ({ label, classes: schedule.filter((item) => Number(item.weekday) === index + 1) })).filter((day) => day.classes.length);
 
     return (
         <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[theme.colors.primary[700]]} /> }>
             <View style={styles.header}><TextApp size="2xl" variant="bold">Mi horario</TextApp><TextApp size="sm" color={theme.colors.text.secondary}>Tus clases y aulas asignadas</TextApp></View>
-            {loading && !data ? <ScheduleSkeleton count={4} /> : grouped.length ? grouped.map((day) => (
+            {(staffLoading || (loading && !data)) ? <ScheduleSkeleton count={4} /> : grouped.length ? grouped.map((day) => (
                 <View key={day.label} style={styles.dayGroup}>
                     <TextApp size="md" variant="semibold">{day.label}</TextApp>
                     {day.classes.map((item) => (
