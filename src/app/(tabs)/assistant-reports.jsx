@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { FileText, Plus, X, Users, UserRound, GraduationCap, Megaphone, Check } from 'lucide-react-native';
 import Screen from '../../components/ui/Screen';
@@ -140,7 +140,7 @@ export default function AssistantReports() {
         </View>
         {loading ? <ActivityIndicator color={theme.colors.primary[700]} style={{ marginTop: 40 }} /> : <>
             {!!error && <View style={s.error}><TextApp size="sm" color={theme.colors.state.error}>{error}</TextApp><Button size="sm" variant="outline" onPress={load}>Reintentar</Button></View>}
-            {!showForm ? <>
+            <>
                 <View style={s.summary}>
                     <View style={s.summaryIcon}><FileText size={20} color={theme.colors.primary[800]} /></View>
                     <View style={{ flex: 1 }}><TextApp size="lg" variant="semibold">{reports.length} registros</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>Tus reportes y comunicaciones creados</TextApp></View>
@@ -160,7 +160,14 @@ export default function AssistantReports() {
                     </View>)}
                     {!groupedReports.length && <View style={s.empty}><FileText size={28} color={theme.colors.primary[700]} /><TextApp size="md" variant="semibold">{search ? 'No encontramos resultados' : 'Todavía no tienes registros'}</TextApp><TextApp size="sm" color={theme.colors.text.secondary} align="center">{search ? 'Prueba con otra palabra.' : 'Crea una citación, anuncio, incidencia o reporte para comenzar.'}</TextApp></View>}
                 </View>
-            </> : <>
+            </>}
+            <Modal visible={showForm} transparent animationType="slide" statusBarTranslucent onRequestClose={() => { setShowForm(false); resetForm(); }}>
+                <View style={s.modalOverlay}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowForm(false); resetForm(); }} />
+                    <KeyboardAvoidingView style={s.modalKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                        <View style={s.modalCard}>
+                            <View style={s.modalHandle} />
+                            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={s.modalScroll}>
                 <View style={s.formHeader}><Pressable onPress={() => { setShowForm(false); resetForm(); }}><X size={22} color={theme.colors.text.primary} /></Pressable><TextApp size="lg" variant="semibold">Nueva comunicación</TextApp></View>
                 <View style={s.form}>
                     <TextApp size="sm" variant="semibold">Tipo de comunicación</TextApp>
@@ -209,7 +216,11 @@ export default function AssistantReports() {
                     <Button loading={saving} disabled={saving || !students.length} onPress={save} fullWidth>Guardar comunicación</Button>
                     <TextApp size="xs" color={theme.colors.text.tertiary}>Este registro no dispara SMS, correo ni notificaciones push automáticamente.</TextApp>
                 </View>
-            </>}
+                            </ScrollView>
+                        </View>
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
         </>}
     </Screen>;
 }
@@ -224,8 +235,13 @@ const s=StyleSheet.create({
     reportTop:{flexDirection:'row',alignItems:'center',gap:8},
     meta:{flexDirection:'row',flexWrap:'wrap',gap:7,alignItems:'center'},
     empty:{margin:8,padding:26,borderRadius:18,backgroundColor:'#fff',alignItems:'center',gap:10,borderWidth:1,borderColor:theme.colors.border.subtle},
-    formHeader:{marginHorizontal:20,marginTop:20,flexDirection:'row',alignItems:'center',gap:14},
-    form:{margin:20,marginTop:12,padding:17,borderRadius:18,backgroundColor:'#fff',borderWidth:1,borderColor:theme.colors.border.subtle,gap:13},
+    formHeader:{marginHorizontal:20,marginTop:8,marginBottom:12,flexDirection:'row',alignItems:'center',gap:14},
+    form:{marginHorizontal:16,marginBottom:18,padding:16,borderRadius:18,backgroundColor:'#fff',borderWidth:1,borderColor:theme.colors.border.subtle,gap:13},
+    modalOverlay:{flex:1,backgroundColor:'rgba(15,23,42,0.48)',justifyContent:'flex-end'},
+    modalKeyboard:{width:'100%',maxHeight:'94%'},
+    modalCard:{maxHeight:'100%',backgroundColor:'#fafafa',borderTopLeftRadius:26,borderTopRightRadius:26,paddingTop:10,overflow:'hidden'},
+    modalHandle:{alignSelf:'center',width:42,height:5,borderRadius:5,backgroundColor:'#cbd5e1',marginBottom:8},
+    modalScroll:{paddingBottom:Platform.OS === 'ios' ? 34 : 20},
     typeGrid:{flexDirection:'row',flexWrap:'wrap',gap:7},
     typeChoice:{width:'48%',padding:11,borderRadius:12,borderWidth:1,borderColor:theme.colors.border.subtle,backgroundColor:'#fff',gap:3},
     choice:{padding:12,borderRadius:12,borderWidth:1,borderColor:theme.colors.border.subtle,backgroundColor:'#fff'},
