@@ -125,7 +125,8 @@ export async function getStudentDetail(studentId, institutionId, classroomId) {
         guardians: null,
         updates: updatesResult.data || [],
         attendance: attendanceResult.data || [],
-        historyError: updatesResult.error?.message || attendanceResult.error?.message || '',
+        updatesError: updatesResult.error?.message || '',
+        attendanceError: attendanceResult.error?.message || '',
     };
 }
 
