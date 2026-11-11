@@ -79,7 +79,7 @@ export default function AssistantQrScanner() {
                         />
                     )}
                     <View style={styles.overlay} pointerEvents="box-none">
-                        <View style={styles.frame} />
+                        <View style={styles.frameCenter}><View style={styles.frame} /></View>
                         <TextApp size="sm" variant="medium" color="#fff" align="center" style={styles.instructions}>
                             Centra el QR del alumno dentro del marco
                         </TextApp>
@@ -111,9 +111,10 @@ const styles = StyleSheet.create({
     header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingTop: 10 },
     headIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.colors.primary[100], alignItems: 'center', justifyContent: 'center' },
     scanner: { flex: 1, minHeight: 300, marginHorizontal: 16, marginBottom: 4, borderRadius: 22, overflow: 'hidden', backgroundColor: '#171717', alignItems: 'stretch', justifyContent: 'center' },
-    overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 18, backgroundColor: 'rgba(0,0,0,0.10)' },
+    overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.10)' },
+    frameCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
     frame: { width: 230, height: 230, borderWidth: 3, borderColor: '#FACC15', borderRadius: 26, backgroundColor: 'transparent' },
-    instructions: { maxWidth: 270, textShadowColor: '#000', textShadowRadius: 5 },
+    instructions: { position: 'absolute', bottom: 72, alignSelf: 'center', maxWidth: 270, textShadowColor: '#000', textShadowRadius: 5 },
     controls: { position: 'absolute', left: 0, right: 0, bottom: 14, paddingHorizontal: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     busy: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.58)', alignItems: 'center', justifyContent: 'center', gap: 12 },
     permission: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
