@@ -32,10 +32,11 @@ export default function ClassDetail() {
     const [announcements, setAnnouncements] = useState([]);
     const [announcementError, setAnnouncementError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [tab, setTab] = useState('info');
-    useEffect(() => {
-        if (['info', 'students', 'announcements', 'grades'].includes(String(initialTab || ''))) setTab(String(initialTab));
-    }, [initialTab]);
+    const [tab, setTab] = useState(() => (
+        ['info', 'students', 'announcements', 'grades'].includes(String(initialTab || ''))
+            ? String(initialTab)
+            : 'info'
+    ));
     const [title, setTitle] = useState('');
     const [body, setBody] = useState('');
     const [loading, setLoading] = useState(true);
