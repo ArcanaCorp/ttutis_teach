@@ -160,7 +160,7 @@ export default function AssistantReports() {
                     </View>)}
                     {!groupedReports.length && <View style={s.empty}><FileText size={28} color={theme.colors.primary[700]} /><TextApp size="md" variant="semibold">{search ? 'No encontramos resultados' : 'Todavía no tienes registros'}</TextApp><TextApp size="sm" color={theme.colors.text.secondary} align="center">{search ? 'Prueba con otra palabra.' : 'Crea una citación, anuncio, incidencia o reporte para comenzar.'}</TextApp></View>}
                 </View>
-            </>}
+            </>
             <Modal visible={showForm} transparent animationType="slide" statusBarTranslucent onRequestClose={() => { setShowForm(false); resetForm(); }}>
                 <View style={s.modalOverlay}>
                     <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowForm(false); resetForm(); }} />
