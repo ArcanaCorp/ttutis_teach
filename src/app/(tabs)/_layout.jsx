@@ -25,7 +25,7 @@ export default function TabsLayout() {
             <Tabs.Screen name="schedule" options={isAssistant ? { href: null } : { title: 'Horario', tabBarIcon: ({ color, size }) => <CalendarDays size={size} color={color} /> }} />
             <Tabs.Screen name="assistant-reports" options={isAssistant ? { title: 'Reportes', tabBarIcon: ({ color, size }) => <FileText size={size} color={color} /> } : { href: null }} />
             <Tabs.Screen name="qr" options={{ title: isAssistant ? 'Asistencia' : 'QR', tabBarIcon: ({ color, size }) => <QrCode size={size} color={color} /> }} />
-            <Tabs.Screen name="assistant-groups" options={isAssistant ? { title: 'Grupos', tabBarIcon: ({ color, size }) => <Users size={size} color={color} /> } : { href: null }} />
+            <Tabs.Screen name="assistant-groups" options={isAssistant ? { title: 'Alumnos', tabBarIcon: ({ color, size }) => <Users size={size} color={color} /> } : { href: null }} />
             <Tabs.Screen name="assessments" options={isAssistant ? { href: null } : { title: 'Evaluaciones', tabBarIcon: ({ color, size }) => <ClipboardList size={size} color={color} /> }} />
             <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: ({ color, size }) => <UserRound size={size} color={color} /> }} />
             <Tabs.Screen name="assessment/[id]" options={{ href: null }} />
