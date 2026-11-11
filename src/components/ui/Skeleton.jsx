@@ -1,20 +1,8 @@
-import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 
 export default function Skeleton({ width = '100%', height = 14, radius = 8, style }) {
-    const opacity = useRef(new Animated.Value(0.45)).current;
-
-    useEffect(() => {
-        const animation = Animated.loop(Animated.sequence([
-            Animated.timing(opacity, { toValue: 0.9, duration: 750, useNativeDriver: true }),
-            Animated.timing(opacity, { toValue: 0.45, duration: 750, useNativeDriver: true }),
-        ]));
-        animation.start();
-        return () => animation.stop();
-    }, [opacity]);
-
-    return <Animated.View style={[styles.base, { width, height, borderRadius: radius, opacity }, style]} />;
+    return <View style={[styles.base, { width, height, borderRadius: radius }, style]} />;
 }
 
 export function ScheduleSkeleton({ count = 3 }) {
