@@ -54,14 +54,25 @@ export async function createClassAnnouncement({ classroomId, sectionId, courseOf
     return data?.data;
 }
 
-
 export async function recordAssistantAttendance(value) {
-    if (!supabase) throw new Error('La conexión con TTUTIS no está disponible.');
+    if (!supabase) {
+        const unavailable = new Error('La conexión con TTUTIS no está disponible.');
+        unavailable.retryable = true;
+        throw unavailable;
+    }
     const { data, error } = await supabase.functions.invoke('teacher-tools', {
         body: { action: 'record_assistant_attendance', value },
     });
-    if (error) throw new Error(await functionErrorMessage(error, 'No se pudo registrar la asistencia.'));
-    if (data?.error) throw new Error(data.error);
+    if (error) {
+        const failure = new Error(await functionErrorMessage(error, 'No se pudo registrar la asistencia.'));
+        failure.status = error.context?.status;
+        throw failure;
+    }
+    if (data?.error) {
+        const failure = new Error(data.error);
+        failure.status = data.status;
+        throw failure;
+    }
     return data;
 }
 

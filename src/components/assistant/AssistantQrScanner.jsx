@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, StyleSheet, View, Vibration } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from 'expo-router';
 import { Camera, Flashlight, QrCode } from 'lucide-react-native';
@@ -9,108 +10,152 @@ import Button from '../ui/Button';
 import { recordAssistantAttendance } from '../../services/teacherTools';
 import { theme } from '../../constants/theme';
 
-const STATUS_LABELS = {
-    PUNCTUAL: 'Puntual',
-    LATE: 'Tarde',
-    ABSENCE: 'Falta',
-};
+const STATUS_LABELS = { PUNCTUAL: 'Puntual', LATE: 'Tarde', ABSENCE: 'Falta' };
+const QUEUE_STORAGE_KEY = '@ttutis/assistant-attendance-queue-v1';
+const RETRY_INTERVAL_MS = 5000;
 
 export default function AssistantQrScanner() {
     const [permission, requestPermission] = useCameraPermissions();
     const [pendingCount, setPendingCount] = useState(0);
+    const [queueLoaded, setQueueLoaded] = useState(false);
     const [torch, setTorch] = useState(false);
     const [toast, setToast] = useState(null);
+    const queueRef = useRef([]);
+    const queueWrite = useRef(Promise.resolve());
     const pendingScans = useRef(new Set());
     const recentScans = useRef(new Map());
     const sequence = useRef(0);
     const toastSequence = useRef(0);
+    const syncing = useRef(false);
     const focused = useIsFocused();
+
+    const showToast = useCallback((type, title, message, duration = 2200) => {
+        setToast({ id: ++toastSequence.current, type, title, message, duration });
+    }, []);
+
+    const persistQueue = useCallback((nextQueue) => {
+        queueRef.current = nextQueue;
+        setPendingCount(nextQueue.length);
+        queueWrite.current = queueWrite.current
+            .catch(() => undefined)
+            .then(() => AsyncStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(nextQueue)));
+        return queueWrite.current;
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        AsyncStorage.getItem(QUEUE_STORAGE_KEY)
+            .then((raw) => {
+                if (!active || !raw) return;
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) return;
+                const restored = parsed.map((item) => ({ ...item, status: 'PENDING' }));
+                queueRef.current = restored;
+                setPendingCount(restored.length);
+            })
+            .catch((error) => {
+                console.warn('[ASSISTANT_QR] queue_restore_failed', error?.message || error);
+                if (active) showToast('error', 'No se pudo recuperar la cola', 'Revisa el almacenamiento del dispositivo.');
+            })
+            .finally(() => { if (active) setQueueLoaded(true); });
+        return () => { active = false; };
+    }, [showToast]);
+
+    const syncQueue = useCallback(async () => {
+        if (!queueLoaded || syncing.current || queueRef.current.length === 0) return;
+        syncing.current = true;
+        try {
+            while (queueRef.current.length > 0) {
+                const item = queueRef.current[0];
+                try {
+                    const response = await recordAssistantAttendance(item.value);
+                    await persistQueue(queueRef.current.filter((entry) => entry.localId !== item.localId));
+                    const status = STATUS_LABELS[response?.event?.attendance_status] || 'Registrada';
+                    const studentName = response?.student?.name || 'Alumno';
+                    showToast(
+                        response?.alreadyRecorded ? 'info' : 'success',
+                        response?.alreadyRecorded ? 'Asistencia ya registrada' : `Asistencia ${status.toLowerCase()}`,
+                        `${studentName}${response?.student?.code ? ` · ${response.student.code}` : ''}`,
+                    );
+                    Vibration.vibrate(25);
+                } catch (error) {
+                    const status = Number(error?.status);
+                    const permanentRejection = status >= 400 && status < 500 && status !== 401 && status !== 403;
+                    if (permanentRejection) {
+                        await persistQueue(queueRef.current.filter((entry) => entry.localId !== item.localId));
+                        recentScans.current.delete(item.value);
+                        showToast('error', 'Asistencia rechazada', error?.message || 'El servidor no aceptó el registro.', 3500);
+                        continue;
+                    }
+                    await persistQueue(queueRef.current.map((entry) => entry.localId === item.localId
+                        ? { ...entry, status: 'PENDING', attempts: (entry.attempts || 0) + 1, lastAttemptAt: new Date().toISOString() }
+                        : entry));
+                    showToast('pending', 'Guardado en este teléfono', 'Se sincronizará automáticamente al recuperar conexión.', 3000);
+                    break;
+                }
+            }
+        } catch (error) {
+            console.warn('[ASSISTANT_QR] queue_sync_failed', error?.message || error);
+            showToast('error', 'No se pudo actualizar la cola', 'El registro permanece guardado en el dispositivo.', 3000);
+        } finally {
+            syncing.current = false;
+        }
+    }, [persistQueue, queueLoaded, showToast]);
+
+    useEffect(() => {
+        if (!queueLoaded) return undefined;
+        syncQueue();
+        const interval = setInterval(syncQueue, RETRY_INTERVAL_MS);
+        const subscription = AppState.addEventListener('change', (state) => {
+            if (state === 'active') syncQueue();
+        });
+        return () => { clearInterval(interval); subscription.remove(); };
+    }, [queueLoaded, syncQueue]);
 
     useEffect(() => {
         if (!toast) return undefined;
-        const timer = setTimeout(() => setToast(null), toast.type === 'error' ? 2800 : 1900);
+        const timer = setTimeout(() => setToast(null), toast.duration || 2200);
         return () => clearTimeout(timer);
     }, [toast]);
 
     async function onScanned(result) {
         const value = typeof result?.data === 'string' ? result.data.trim() : '';
-        if (!value) return;
-
+        if (!value || !queueLoaded) return;
         const now = Date.now();
         const previous = recentScans.current.get(value);
-        if (pendingScans.current.has(value) || (previous && now - previous < 1500)) return;
+        if (pendingScans.current.has(value) || queueRef.current.some((item) => item.value === value) || (previous && now - previous < 1500)) return;
 
-        // Only deduplicate the same QR. Different students are submitted concurrently,
-        // so the next scan never waits for the previous student's network round trip.
         const requestId = ++sequence.current;
-        const startedAt = Date.now();
-        const started = globalThis.performance?.now?.() ?? startedAt;
+        const item = {
+            localId: `assistant-${now}-${requestId}`,
+            value,
+            createdAt: new Date(now).toISOString(),
+            status: 'PENDING',
+            attempts: 0,
+        };
         pendingScans.current.add(value);
         recentScans.current.set(value, now);
-        setPendingCount(pendingScans.current.size);
-
+        Vibration.vibrate(45);
+        showToast('pending', 'QR capturado', 'Guardando en el teléfono y sincronizando…', 1800);
         console.log('[ASSISTANT_QR] scan_received', JSON.stringify({
-            requestId,
-            timestamp: new Date(startedAt).toISOString(),
-            pending: pendingScans.current.size,
+            requestId, timestamp: item.createdAt, pending: queueRef.current.length + 1,
         }));
-        setToast({
-            id: ++toastSequence.current,
-            type: 'pending',
-            title: 'Registrando asistencia…',
-            message: 'Puedes escanear al siguiente alumno.',
-        });
-
         try {
-            console.log('[ASSISTANT_QR] request_started', JSON.stringify({
-                requestId,
-                timestamp: new Date().toISOString(),
+            await persistQueue([...queueRef.current, item]);
+            console.log('[ASSISTANT_QR] local_saved', JSON.stringify({
+                requestId, timestamp: new Date().toISOString(), queueSize: queueRef.current.length,
             }));
-            const response = await recordAssistantAttendance(value);
-            const finishedAt = Date.now();
-            const elapsedMs = Math.round((globalThis.performance?.now?.() ?? finishedAt) - started);
-            console.log('[ASSISTANT_QR] request_finished', JSON.stringify({
-                requestId,
-                timestamp: new Date(finishedAt).toISOString(),
-                elapsedMs,
-                httpResult: response?.alreadyRecorded ? 'already_recorded' : 'created',
-                studentCode: response?.student?.code || null,
-            }));
-
-            const status = STATUS_LABELS[response?.event?.attendance_status] || 'Registrado';
-            const studentName = response?.student?.name || 'Alumno';
-            const studentCode = response?.student?.code ? ` · ${response.student.code}` : '';
-            const alreadyRecorded = Boolean(response?.alreadyRecorded);
-            setToast({
-                id: ++toastSequence.current,
-                type: alreadyRecorded ? 'info' : 'success',
-                title: alreadyRecorded ? 'Ya estaba registrada' : `Asistencia ${status.toLowerCase()}`,
-                message: `${studentName}${studentCode} · ${elapsedMs} ms`,
-            });
+            syncQueue();
         } catch (error) {
-            const finishedAt = Date.now();
-            const elapsedMs = Math.round((globalThis.performance?.now?.() ?? finishedAt) - started);
-            console.error('[ASSISTANT_QR] request_failed', JSON.stringify({
-                requestId,
-                timestamp: new Date(finishedAt).toISOString(),
-                elapsedMs,
-                error: error?.message || 'unknown',
-            }));
             recentScans.current.delete(value);
-            setToast({
-                id: ++toastSequence.current,
-                type: 'error',
-                title: 'No se pudo registrar',
-                message: error?.message || 'Verifica la conexión e inténtalo nuevamente.',
-            });
+            showToast('error', 'No se pudo guardar', 'No se registró localmente. Vuelve a escanear.', 3200);
+            console.error('[ASSISTANT_QR] local_save_failed', error?.message || error);
         } finally {
             pendingScans.current.delete(value);
-            setPendingCount(pendingScans.current.size);
         }
     }
 
-    const toastBackground = toast?.type === 'error'
-        ? '#991B1B'
+    const toastBackground = toast?.type === 'error' ? '#991B1B'
         : toast?.type === 'info' ? '#334155'
             : toast?.type === 'pending' ? '#1D4ED8' : '#166534';
 
@@ -123,7 +168,6 @@ export default function AssistantQrScanner() {
                     <TextApp size="xs" color={theme.colors.text.secondary}>Escanea el QR de cualquier alumno activo</TextApp>
                 </View>
             </View>
-
             {!permission ? (
                 <View style={styles.permission}><ActivityIndicator color={theme.colors.primary[700]} /></View>
             ) : !permission.granted ? (
@@ -150,7 +194,6 @@ export default function AssistantQrScanner() {
                             Centra el QR del alumno dentro del marco
                         </TextApp>
                     </View>
-
                     {toast && (
                         <View
                             key={toast.id}
@@ -163,16 +206,14 @@ export default function AssistantQrScanner() {
                             <TextApp size="xs" color="#fff">{toast.message}</TextApp>
                         </View>
                     )}
-
                     {pendingCount > 0 && (
                         <View style={styles.processing} pointerEvents="none">
                             <ActivityIndicator size="small" color="#fff" />
                             <TextApp size="xs" variant="semibold" color="#fff">
-                                {pendingCount} registro(s) en proceso · escáner activo
+                                {pendingCount} registro(s) pendiente(s) de sincronización
                             </TextApp>
                         </View>
                     )}
-
                     <View style={styles.controls}>
                         <Button size="sm" variant="secondary" icon={Flashlight} onPress={() => setTorch((value) => !value)}>
                             {torch ? 'Apagar linterna' : 'Linterna'}
@@ -180,11 +221,10 @@ export default function AssistantQrScanner() {
                     </View>
                 </View>
             )}
-
             <View style={styles.notice}>
-                <TextApp size="sm" variant="semibold">Ventana de asistencia</TextApp>
+                <TextApp size="sm" variant="semibold">Sincronización de asistencia</TextApp>
                 <TextApp size="xs" color={theme.colors.text.secondary}>
-                    El servidor valida el horario del nivel y clasifica el ingreso como puntual, tarde o falta. Un alumno solo puede registrar una entrada por día.
+                    El escaneo se guarda primero en este teléfono. El servidor valida el alumno y confirma la asistencia cuando hay conexión.
                 </TextApp>
             </View>
         </Screen>
@@ -199,7 +239,7 @@ const styles = StyleSheet.create({
     overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.10)' },
     frameCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
     frame: { width: 230, height: 230, borderWidth: 3, borderColor: '#FACC15', borderRadius: 26, backgroundColor: 'transparent' },
-    instructions: { position: 'absolute', bottom: 72, alignSelf: 'center', maxWidth: 270, textShadowColor: '#000', textShadowRadius: 5 },
+    instructions: { position: 'absolute', top: '50%', marginTop: 124, alignSelf: 'center', width: '88%', maxWidth: 300, textShadowColor: '#000', textShadowRadius: 5 },
     controls: { position: 'absolute', left: 0, right: 0, bottom: 14, paddingHorizontal: 14, flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center' },
     toast: { position: 'absolute', top: 14, left: 14, right: 14, zIndex: 5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, gap: 2, elevation: 6 },
     processing: { position: 'absolute', bottom: 66, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.68)' },
