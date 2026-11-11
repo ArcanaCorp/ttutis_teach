@@ -64,6 +64,7 @@ export function AuthProvider({ children }) {
         session,
         loading,
         staff: staffState && staffState.userId === session?.user?.id ? staffState.summary : null,
+        staffLoading: Boolean(session?.user?.id && staffState?.userId !== session.user.id),
         isConfigured: isSupabaseConfigured,
         signIn: signInWithAccessCode,
         signOut,
