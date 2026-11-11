@@ -25,7 +25,7 @@ export function useCachedQuery(cacheKey, queryFn, staleTime = 5 * 60 * 1000) {
         async function load() {
             const cached = await readCache(cacheKey);
             if (!active) return;
-            if (cached && Object.hasOwn(cached, 'data')) {
+            if (cached && Object.prototype.hasOwnProperty.call(cached, 'data')) {
                 setData(cached.data);
                 setLoading(false);
                 if (Date.now() - Number(cached.checkedAt || 0) < staleTime) return;
