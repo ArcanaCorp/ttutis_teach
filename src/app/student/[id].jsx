@@ -33,15 +33,22 @@ export default function StudentDetail() {
     const [student, setStudent] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [loadError, setLoadError] = useState('');
 
     const load = useCallback(async () => {
-        const result = await getStudentDetail(String(params.id || ''), staff?.institutionId, String(params.classroomId || ''));
+        const result = await getStudentDetail(String(params.id || ''), staff?.institutionId, String(params.classroomId || ''), String(params.enrollmentId || ''));
         setStudent(result);
-    }, [params.id, params.classroomId, staff?.institutionId]);
+        setLoadError('');
+    }, [params.id, params.classroomId, params.enrollmentId, staff?.institutionId]);
 
     useEffect(() => {
         let active = true;
-        load().catch(() => { if (active) setStudent(null); }).finally(() => { if (active) setLoading(false); });
+        Promise.resolve().then(load).catch((error) => {
+            if (active) {
+                setStudent(null);
+                setLoadError(error.message || 'Ocurrió un error inesperado al consultar la ficha.');
+            }
+        }).finally(() => { if (active) setLoading(false); });
         return () => { active = false; };
     }, [load]);
 
@@ -83,7 +90,7 @@ export default function StudentDetail() {
                 </View>
             </View>
             {loading ? <ActivityIndicator color={theme.colors.primary[700]} style={{ padding: 32 }} /> : !student ? (
-                <View style={styles.empty}><TextApp size="md" variant="semibold">No se pudo cargar la ficha</TextApp><TextApp size="sm" color={theme.colors.text.secondary} align="center">Verifica que el alumno siga matriculado en esta aula.</TextApp><Button size="sm" variant="outline" onPress={load}>Reintentar</Button></View>
+                <View style={styles.empty}><TextApp size="md" variant="semibold">No se pudo cargar la ficha</TextApp><TextApp size="sm" color={theme.colors.text.secondary} align="center">{loadError || 'No se pudo recuperar la información del alumno.'}</TextApp><Button size="sm" variant="outline" onPress={() => { setLoading(true); load().catch((error) => setLoadError(error.message)).finally(() => setLoading(false)); }}>Reintentar</Button></View>
             ) : (
                 <View style={styles.content}>
                     <View style={styles.hero}>
