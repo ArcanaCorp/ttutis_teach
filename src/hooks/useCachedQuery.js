@@ -2,13 +2,14 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { readCache, writeCache } from '../services/cacheService';
 
-export function useCachedQuery(cacheKey, queryFn, staleTime = 15 * 60 * 1000) {
+export function useCachedQuery(cacheKey, queryFn, staleTime = 15 * 60 * 1000, enabled = true) {
     const [entry, setEntry] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const data = entry?.key === cacheKey ? entry.data : null;
 
     const refresh = useCallback(async () => {
+        if (!enabled) return null;
         setRefreshing(true);
         try {
             const freshData = await queryFn();
@@ -19,9 +20,13 @@ export function useCachedQuery(cacheKey, queryFn, staleTime = 15 * 60 * 1000) {
             setRefreshing(false);
             setLoading(false);
         }
-    }, [cacheKey, queryFn]);
+    }, [cacheKey, enabled, queryFn]);
 
     useFocusEffect(useCallback(() => {
+        if (!enabled) {
+            setLoading(true);
+            return undefined;
+        }
         let active = true;
 
         async function load() {
@@ -32,6 +37,8 @@ export function useCachedQuery(cacheKey, queryFn, staleTime = 15 * 60 * 1000) {
                 setEntry({ key: cacheKey, data: cached.data });
                 setLoading(false);
                 if (Date.now() - Number(cached.checkedAt || 0) < staleTime) return;
+            } else {
+                setLoading(true);
             }
 
             try {
@@ -48,7 +55,7 @@ export function useCachedQuery(cacheKey, queryFn, staleTime = 15 * 60 * 1000) {
 
         load();
         return () => { active = false; };
-    }, [cacheKey, queryFn, staleTime]));
+    }, [cacheKey, enabled, queryFn, staleTime]));
 
     return { data, loading, refreshing, refresh };
 }
