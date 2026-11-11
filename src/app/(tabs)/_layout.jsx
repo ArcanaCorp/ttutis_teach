@@ -19,12 +19,25 @@ export default function TabsLayout() {
             tabBarLabelStyle: { fontFamily: theme.typography.fontFamily.medium, fontSize: 10, marginTop: 3 },
         }}>
             <Tabs.Screen name="home" options={{ title: 'Inicio', tabBarIcon: ({ color, size }) => <House size={size} color={color} /> }} />
-            <Tabs.Screen name="qr" options={{ title: isAssistant ? 'Asistencia' : 'QR', tabBarIcon: ({ color, size }) => <QrCode size={size} color={color} /> }} />
-            <Tabs.Screen name="schedule" options={isAssistant ? { href: null } : { title: 'Horario', tabBarIcon: ({ color, size }) => <CalendarDays size={size} color={color} /> }} />
-            <Tabs.Screen name="assessments" options={isAssistant ? { href: null } : { title: 'Evaluaciones', tabBarIcon: ({ color, size }) => <ClipboardList size={size} color={color} /> }} />
-            <Tabs.Screen name="assistant-reports" options={isAssistant ? { title: 'Reportes', tabBarIcon: ({ color, size }) => <FileText size={size} color={color} /> } : { href: null }} />
-            <Tabs.Screen name="assistant-groups" options={isAssistant ? { title: 'Grupos', tabBarIcon: ({ color, size }) => <Users size={size} color={color} /> } : { href: null }} />
-            <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: ({ color, size }) => <UserRound size={size} color={color} /> }} />
+            {isAssistant ? (
+                <>
+                    <Tabs.Screen name="assistant-reports" options={{ title: 'Reportes', tabBarIcon: ({ color, size }) => <FileText size={size} color={color} /> }} />
+                    <Tabs.Screen name="qr" options={{ title: 'Asistencia', tabBarIcon: ({ color, size }) => <QrCode size={size} color={color} /> }} />
+                    <Tabs.Screen name="assistant-groups" options={{ title: 'Grupos', tabBarIcon: ({ color, size }) => <Users size={size} color={color} /> }} />
+                    <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: ({ color, size }) => <UserRound size={size} color={color} /> }} />
+                    <Tabs.Screen name="schedule" options={{ href: null }} />
+                    <Tabs.Screen name="assessments" options={{ href: null }} />
+                </>
+            ) : (
+                <>
+                    <Tabs.Screen name="schedule" options={{ title: 'Horario', tabBarIcon: ({ color, size }) => <CalendarDays size={size} color={color} /> }} />
+                    <Tabs.Screen name="qr" options={{ title: 'QR', tabBarIcon: ({ color, size }) => <QrCode size={size} color={color} /> }} />
+                    <Tabs.Screen name="assessments" options={{ title: 'Evaluaciones', tabBarIcon: ({ color, size }) => <ClipboardList size={size} color={color} /> }} />
+                    <Tabs.Screen name="assistant-reports" options={{ href: null }} />
+                    <Tabs.Screen name="assistant-groups" options={{ href: null }} />
+                    <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: ({ color, size }) => <UserRound size={size} color={color} /> }} />
+                </>
+            )}
             <Tabs.Screen name="assessment/[id]" options={{ href: null }} />
         </Tabs>
     );

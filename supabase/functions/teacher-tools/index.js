@@ -43,6 +43,9 @@ function normalizeQr(value) {
     } catch { /* Plain QR payload. */ }
 
     if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(raw)) return { studentId: raw };
+    // Legacy attendance QR values are stored directly as 32-character MD5 hex strings.
+    // Detect them before the generic alphanumeric student-code pattern.
+    if (/^[0-9a-f]{32}$/i.test(raw)) return { token: raw };
     if (/^[A-Z0-9-]{4,32}$/i.test(raw)) return { studentCode: raw };
     return { token: raw };
 }
@@ -267,6 +270,98 @@ async function handleClassAnnouncements(admin, caller, payload) {
     return json({ data }, 201);
 }
 
+
+function localDateAndTime(timeZone, instant = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(instant);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const date = `${values.year}-${values.month}-${values.day}`;
+    const timeParts = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(instant);
+    const clock = Object.fromEntries(timeParts.map((part) => [part.type, part.value]));
+    return { date, time: `${clock.hour}:${clock.minute}` };
+}
+function classifyAttendance(clock, schedule) {
+    const p = schedule?.punctual, l = schedule?.late, a = schedule?.absence;
+    if (!p?.start || !p?.end || !l?.start || !l?.end || !a?.from) return null;
+    if (clock >= p.start && clock < p.end) return 'PUNCTUAL';
+    if (clock >= l.start && clock < l.end) return 'LATE';
+    if (clock >= a.from) return 'ABSENCE';
+    return 'CLOSED';
+}
+async function handleAssistantAttendance(admin, caller, payload) {
+    const qrPayload = payload?.value;
+    if (typeof qrPayload !== 'string' || !qrPayload.trim() || qrPayload.length > 4096) return errorResponse('El código QR no es válido.');
+    const assistants = caller.memberships.filter((m) => m.role === 'ASSISTANT');
+    if (!assistants.length) return errorResponse('Esta acción está disponible únicamente para auxiliares.', 403);
+    for (const membership of assistants) {
+        const student = await findStudent(admin, membership.institution_id, qrPayload);
+        if (!student) continue;
+        const { data: enrollments, error: enrollmentError } = await admin.from('enrollments').select('id,classroom_id')
+            .eq('institution_id', membership.institution_id).eq('student_id', student.id).eq('status', 'ACTIVE');
+        if (enrollmentError) return errorResponse('No se pudo validar la matrícula del alumno.', 500);
+        if (!enrollments?.length) return errorResponse('El alumno no tiene una matrícula activa.', 409);
+        const classroomIds = [...new Set(enrollments.map((e) => e.classroom_id))];
+        const { data: classrooms, error: classroomError } = await admin.from('classrooms').select('id,level,status')
+            .eq('institution_id', membership.institution_id).in('id', classroomIds).eq('status', 'ACTIVE');
+        if (classroomError) return errorResponse('No se pudo validar el aula del alumno.', 500);
+        const enrollment = enrollments.find((e) => classrooms?.some((c) => c.id === e.classroom_id));
+        const classroom = classrooms?.find((c) => c.id === enrollment?.classroom_id);
+        if (!enrollment || !classroom) return errorResponse('El alumno no tiene un aula activa.', 409);
+        const { data: institution, error: institutionError } = await admin.from('institutions')
+            .select('timezone,attendance_settings').eq('id', membership.institution_id).eq('status', 'ACTIVE').maybeSingle();
+        if (institutionError || !institution) return errorResponse('No se pudo consultar la configuración institucional.', 500);
+        const schedule = institution.attendance_settings?.by_level?.[classroom.level] || institution.attendance_settings?.global;
+        if (!schedule) return errorResponse(`La asistencia todavía no está configurada para el nivel ${classroom.level}.`, 409);
+        const now = new Date();
+        const { date, time } = localDateAndTime(institution.timezone || 'America/Lima', now);
+        const status = classifyAttendance(time, schedule);
+        if (status === 'CLOSED') return errorResponse('La ventana de asistencia todavía no ha comenzado.', 409);
+        if (!status) return errorResponse('La configuración de horarios de este nivel está incompleta.', 409);
+        const key = `assistant_qr_entry:${student.id}:${date}`;
+        const fields = 'id,attendance_status,attendance_local_date,occurred_at,justification_status,justification_notes';
+        const { data: existing, error: lookupError } = await admin.from('attendance_events').select(fields)
+            .eq('institution_id', membership.institution_id).eq('idempotency_key', key).maybeSingle();
+        if (lookupError) return errorResponse('No se pudo comprobar si el alumno ya registró su asistencia.', 500);
+        const studentData = { id: student.id, name: [student.first_names, student.last_names].filter(Boolean).join(' '), code: student.student_code };
+        if (existing) return json({ alreadyRecorded: true, event: existing, student: studentData });
+        const { data: event, error: insertError } = await admin.from('attendance_events').insert({
+            institution_id: membership.institution_id, student_id: student.id, enrollment_id: enrollment.id,
+            event_type: 'ENTRY', occurred_at: now.toISOString(), source: 'QR',
+            recorded_by_membership_id: membership.id, idempotency_key: key,
+            attendance_status: status, attendance_local_date: date,
+            justification_status: status === 'ABSENCE' ? 'UNJUSTIFIED' : 'NOT_REQUIRED',
+        }).select('id,attendance_status,attendance_local_date,occurred_at,justification_status').single();
+        if (insertError?.code === '23505') {
+            const { data: duplicate } = await admin.from('attendance_events').select(fields)
+                .eq('institution_id', membership.institution_id).eq('idempotency_key', key).maybeSingle();
+            if (duplicate) return json({ alreadyRecorded: true, event: duplicate, student: studentData });
+        }
+        if (insertError) { console.error('Assistant attendance insert failed.', insertError.message); return errorResponse('No se pudo registrar la asistencia.', 500); }
+        return json({ alreadyRecorded: false, event, student: studentData }, 201);
+    }
+    return errorResponse('No encontramos un alumno activo de esta institución con ese código QR.', 404);
+}
+async function handleJustifyAssistantAbsence(admin, caller, payload) {
+    const assistants = caller.memberships.filter((m) => m.role === 'ASSISTANT');
+    if (!assistants.length) return errorResponse('Esta acción está disponible únicamente para auxiliares.', 403);
+    const eventId = payload?.eventId;
+    const reason = typeof payload?.reason === 'string' ? payload.reason.trim() : '';
+    if (!eventId || reason.length < 4 || reason.length > 1000) return errorResponse('Escribe el motivo de la justificación (4 a 1000 caracteres).');
+    for (const membership of assistants) {
+        const { data, error } = await admin.from('attendance_events').update({
+            justification_status: 'JUSTIFIED', justification_notes: reason,
+            justified_at: new Date().toISOString(), justified_by_membership_id: membership.id,
+        }).eq('id', eventId).eq('institution_id', membership.institution_id)
+            .eq('attendance_status', 'ABSENCE').eq('justification_status', 'UNJUSTIFIED')
+            .select('id,justification_status,justification_notes,justified_at').maybeSingle();
+        if (error) return errorResponse('No se pudo guardar la justificación.', 500);
+        if (data) return json({ data });
+        const { data: event } = await admin.from('attendance_events').select('id,justification_status')
+            .eq('id', eventId).eq('institution_id', membership.institution_id).maybeSingle();
+        if (event?.justification_status === 'JUSTIFIED') return json({ data: event, alreadyJustified: true });
+    }
+    return errorResponse('No encontramos una falta pendiente de justificar para esta institución.', 404);
+}
+
 Deno.serve(async (request) => {
     if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
     if (request.method !== 'POST') return errorResponse('Método no permitido.', 405);
@@ -294,6 +389,8 @@ Deno.serve(async (request) => {
 
     try {
         if (payload?.action === 'resolve_qr') return await handleResolveQr(admin, caller, payload);
+        if (payload?.action === 'record_assistant_attendance') return await handleAssistantAttendance(admin, caller, payload);
+        if (payload?.action === 'justify_assistant_absence') return await handleJustifyAssistantAbsence(admin, caller, payload);
         if (payload?.action === 'create_observation') return await handleCreateObservation(admin, caller, payload);
         if (payload?.action === 'create_citation') return await handleCreateCitation(admin, caller, payload);
         if (payload?.action === 'list_announcements' || payload?.action === 'create_announcement') return await handleClassAnnouncements(admin, caller, payload);
