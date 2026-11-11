@@ -132,7 +132,7 @@ export default function StudentDetail() {
                             <TextApp size="xs" color={theme.colors.text.secondary}>{item.update_type} · {dateLabel(item.created_at)}</TextApp>
                             {!!item.body && <TextApp size="sm" color={theme.colors.text.secondary}>{item.body}</TextApp>}
                         </View>
-                    )) : <TextApp size="sm" color={theme.colors.text.tertiary}>Todavía no hay registros.</TextApp>}
+                    )) : <TextApp size="sm" color={theme.colors.text.tertiary}>{student.updatesError ? 'No fue posible consultar las comunicaciones con los permisos actuales.' : 'Todavía no hay registros.'}</TextApp>}
 
                     <TextApp size="md" variant="semibold">Asistencia reciente</TextApp>
                     {student.attendance.length ? student.attendance.map((item) => (
@@ -141,7 +141,7 @@ export default function StudentDetail() {
                             <TextApp size="xs" color={theme.colors.text.secondary}>{new Date(item.occurred_at).toLocaleString('es-PE')}</TextApp>
                             {!!item.notes && <TextApp size="sm" color={theme.colors.text.secondary}>{item.notes}</TextApp>}
                         </View>
-                    )) : <TextApp size="sm" color={theme.colors.text.tertiary}>No hay marcaciones registradas.</TextApp>}
+                    )) : <TextApp size="sm" color={theme.colors.text.tertiary}>{student.attendanceError ? 'No fue posible consultar la asistencia con los permisos actuales.' : 'No hay marcaciones registradas.'}</TextApp>}
                 </View>
             )}
         </Screen>
