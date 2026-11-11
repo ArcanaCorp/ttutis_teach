@@ -17,14 +17,14 @@ function formatTime(value) {
 }
 
 export default function Home() {
-    const { session, staff } = useAuth();
+    const { session, staff, staffLoading } = useAuth();
     const today = useMemo(() => new Date(), []);
     const todayLabel = `${weekdayLabels[today.getDay()]}, ${today.toLocaleDateString('es-PE', { day: 'numeric', month: 'long' })}`;
     const loadSchedule = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
         ? getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
-        : Promise.resolve([]), [session?.user?.id, staff?.role, staff?.institutionId, staff?.membershipId]);
+        : Promise.resolve([]), [session, staff]);
     const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
-    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, loadSchedule, 5 * 60 * 1000);
+    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, loadSchedule, 15 * 60 * 1000, !staffLoading);
     const schedule = data || [];
     const todaysClasses = schedule.filter((item) => Number(item.weekday) === (today.getDay() || 7));
 
@@ -59,7 +59,7 @@ export default function Home() {
                     </Pressable>
                 </View>
 
-                {loading && !data ? <ScheduleSkeleton count={2} /> : todaysClasses.length ? (
+                {(staffLoading || (loading && !data)) ? <ScheduleSkeleton count={2} /> : todaysClasses.length ? (
                     <View style={styles.classList}>
                         {todaysClasses.map((item) => (
                             <View key={item.id} style={styles.classCard}>
