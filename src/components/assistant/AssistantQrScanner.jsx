@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, StyleSheet, TextInput, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from 'expo-router';
 import { Camera, CheckCircle2, Clock3, QrCode, XCircle } from 'lucide-react-native';
@@ -7,7 +7,7 @@ import Screen from '../ui/Screen';
 import TextApp from '../ui/TextApp';
 import Button from '../ui/Button';
 import { theme } from '../../constants/theme';
-import { recordAssistantAttendance } from '../../services/teacherTools';
+import { justifyAssistantAbsence, recordAssistantAttendance } from '../../services/teacherTools';
 
 const statusLabels = { PUNCTUAL: 'Puntual', LATE: 'Tardanza', ABSENCE: 'Falta' };
 
@@ -16,6 +16,9 @@ export default function AssistantQrScanner() {
     const [processing, setProcessing] = useState(false);
     const [result, setResult] = useState(null);
     const [errorMessage, setErrorMessage] = useState('');
+    const [justificationVisible, setJustificationVisible] = useState(false);
+    const [justificationReason, setJustificationReason] = useState('');
+    const [savingJustification, setSavingJustification] = useState(false);
     const scanLock = useRef(false);
     const focused = useIsFocused();
 
@@ -35,10 +38,31 @@ export default function AssistantQrScanner() {
         }
     }, []);
 
+    const submitJustification = async () => {
+        if (!result?.event?.id || justificationReason.trim().length < 4) {
+            Alert.alert('Motivo requerido', 'Escribe al menos 4 caracteres para justificar la falta.');
+            return;
+        }
+        setSavingJustification(true);
+        try {
+            const response = await justifyAssistantAbsence(result.event.id, justificationReason.trim());
+            setResult((current) => ({ ...current, event: { ...current.event, ...response.data } }));
+            setJustificationVisible(false);
+            setJustificationReason('');
+            Alert.alert('Justificación guardada', 'La falta quedó marcada como justificada.');
+        } catch (error) {
+            Alert.alert('No se pudo justificar', error.message || 'Inténtalo nuevamente.');
+        } finally {
+            setSavingJustification(false);
+        }
+    };
+
     const resetScanner = () => {
         scanLock.current = false;
         setResult(null);
         setErrorMessage('');
+        setJustificationVisible(false);
+        setJustificationReason('');
     };
 
     const status = result?.event?.attendance_status;
@@ -97,12 +121,30 @@ export default function AssistantQrScanner() {
                             {!!result.student?.code && <TextApp size="sm" color="#e5e7eb">Código: {result.student.code}</TextApp>}
                             <TextApp size="md" variant="semibold" color="#fff">{result.alreadyRecorded ? 'Ya tenía asistencia registrada hoy' : 'Asistencia registrada'}</TextApp>
                             <TextApp size="sm" color="#fff">{statusLabels[status] || 'Registro existente'}</TextApp>
-                            {result.event?.justification_status === 'UNJUSTIFIED' && <TextApp size="xs" color="#fde68a">Esta falta queda pendiente de justificación.</TextApp>}
+                            {result.event?.justification_status === 'UNJUSTIFIED' && <>
+                                <TextApp size="xs" color="#fde68a">Esta falta queda pendiente de justificación.</TextApp>
+                                <Button size="sm" variant="warning" onPress={() => setJustificationVisible(true)}>Justificar falta</Button>
+                            </>}
+                            {result.event?.justification_status === 'JUSTIFIED' && <TextApp size="xs" color="#86efac">Falta justificada</TextApp>}
                             <Button size="sm" onPress={resetScanner}>Escanear siguiente alumno</Button>
                         </View>
                     )}
                 </View>
             )}
+
+            <Modal visible={justificationVisible} transparent animationType="fade" onRequestClose={() => setJustificationVisible(false)}>
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.modalCard}>
+                        <TextApp size="lg" variant="bold">Justificar falta</TextApp>
+                        <TextApp size="sm" color={theme.colors.text.secondary}>Registra el motivo. La asistencia original se conserva y queda marcada como justificada.</TextApp>
+                        <TextInput value={justificationReason} onChangeText={setJustificationReason} placeholder="Motivo de la justificación" multiline maxLength={1000} textAlignVertical="top" style={styles.reasonInput} />
+                        <View style={styles.modalActions}>
+                            <Button variant="outline" onPress={() => setJustificationVisible(false)} disabled={savingJustification}>Cancelar</Button>
+                            <Button onPress={submitJustification} loading={savingJustification}>Guardar</Button>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
             <View style={styles.notice}>
                 <TextApp size="sm" variant="semibold">Horario de ingreso</TextApp>
@@ -123,4 +165,8 @@ const styles = StyleSheet.create({
     permission: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
     feedback: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, backgroundColor: 'rgba(15, 23, 42, 0.94)' },
     notice: { marginHorizontal: 20, padding: 14, borderRadius: 16, backgroundColor: theme.colors.primary[100], gap: 5 },
+    modalBackdrop: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: 'rgba(15, 23, 42, 0.55)' },
+    modalCard: { padding: 20, borderRadius: 20, backgroundColor: '#fff', gap: 12 },
+    reasonInput: { minHeight: 110, borderWidth: 1, borderColor: theme.colors.border.DEFAULT, borderRadius: 12, padding: 12, color: theme.colors.text.primary },
+    modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
 });
