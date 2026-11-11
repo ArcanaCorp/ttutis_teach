@@ -151,6 +151,7 @@ export default function ClassDetail() {
                             pathname: '/student/[id]',
                             params: {
                                 id: student.id,
+                                scheduleId: String(id),
                                 classroomId: detail.classroomId,
                                 academicYearId: detail.academicYearId,
                                 classroomName: detail.section,
