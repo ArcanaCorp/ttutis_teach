@@ -37,7 +37,7 @@ export default function Observation() {
                 await createObservation({ studentId: String(params.studentId), classroomId: selected.classroomId, title, body });
                 Alert.alert('Observación guardada', `Se registró en el perfil de ${String(params.studentName || 'el alumno')}.`);
             }
-            router.replace('/(tabs)/qr');
+            router.replace(String(params.returnTo || '/(tabs)/qr'));
         } catch (error) {
             Alert.alert('No se pudo guardar', error.message);
         } finally {

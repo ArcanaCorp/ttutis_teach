@@ -130,19 +130,7 @@ async function getCaller(req, admin, publicKey) {
     const { data: memberships } = await admin.from('memberships')
         .select('id,institution_id,role,status').eq('profile_id', data.user.id)
         .eq('status', 'ACTIVE').in('role', ['TEACHER', 'ASSISTANT']);
-    const { data: modernRows } = await admin.from('institution_memberships')
-        .select('id,institution_id,status,membership_role_assignments(roles(code))')
-        .eq('profile_id', data.user.id).eq('status', 'ACTIVE');
-    const modernMemberships = (modernRows || []).filter((membership) => {
-        const assignments = Array.isArray(membership.membership_role_assignments)
-            ? membership.membership_role_assignments
-            : [membership.membership_role_assignments].filter(Boolean);
-        return assignments.some((assignment) => {
-            const role = Array.isArray(assignment.roles) ? assignment.roles[0] : assignment.roles;
-            return role?.code === 'TEACHER';
-        });
-    });
-    return { user: data.user, memberships: memberships || [], modernMemberships };
+    return { user: data.user, memberships: memberships || [] };
 }
 
 async function handleResolveQr(admin, caller, payload) {
@@ -185,7 +173,6 @@ async function handleCreateObservation(admin, caller, payload) {
         const { data, error } = await admin.from('student_updates').insert({
             institution_id: membership.institution_id,
             author_membership_id: membership.id,
-            audience_type: 'STUDENT',
             student_id: studentId,
             update_type: 'BEHAVIOR',
             title: cleanTitle,
@@ -218,8 +205,6 @@ async function handleCreateCitation(admin, caller, payload) {
         const { data, error } = await admin.from('student_updates').insert({
             institution_id: membership.institution_id,
             author_membership_id: membership.id,
-            audience_type: 'CLASSROOM',
-            academic_year_id: classroom.academic_year_id,
             classroom_id: classroom.id,
             update_type: 'CITATION',
             title: cleanTitle,
@@ -246,75 +231,9 @@ async function assignedMembership(admin, caller, classroomId) {
     return null;
 }
 
-async function assignedModernTeacher(admin, caller, { sectionId, courseOfferingId, academicYearId }) {
-    if (!sectionId) return null;
-    for (const membership of caller.modernMemberships || []) {
-        const { data: link } = await admin.from('profile_person_links').select('person_id')
-            .eq('profile_id', caller.user.id).eq('institution_id', membership.institution_id)
-            .eq('verification_status', 'VERIFIED').maybeSingle();
-        if (!link?.person_id) continue;
-        const { data: staff } = await admin.from('institution_staff').select('id')
-            .eq('institution_id', membership.institution_id).eq('person_id', link.person_id)
-            .eq('status', 'ACTIVE').maybeSingle();
-        if (!staff?.id) continue;
-        const { data: assignments } = await admin.from('teacher_assignments')
-            .select('id,course_offerings!inner(id,section_id,academic_year_id,institution_id)')
-            .eq('institution_id', membership.institution_id).eq('staff_id', staff.id).eq('status', 'ACTIVE');
-        const allowed = (assignments || []).some((assignment) => {
-            const offering = Array.isArray(assignment.course_offerings) ? assignment.course_offerings[0] : assignment.course_offerings;
-            return offering?.section_id === sectionId
-                && (!courseOfferingId || offering.id === courseOfferingId)
-                && (!academicYearId || offering.academic_year_id === academicYearId);
-        });
-        if (allowed) return membership;
-    }
-    return null;
-}
-
-async function handleModernCourseAnnouncements(admin, membership, payload) {
-    const { sectionId, courseOfferingId, academicYearId, action } = payload;
-    if (!academicYearId) return errorResponse('El año académico del curso no es válido.');
-    const filter = admin.from('course_announcements')
-        .select('id,title,body,created_at')
-        .eq('institution_id', membership.institution_id).eq('section_id', sectionId)
-        .eq('academic_year_id', academicYearId);
-    if (courseOfferingId) filter.eq('course_offering_id', courseOfferingId);
-    if (action === 'list_announcements') {
-        const { data, error } = await filter.order('created_at', { ascending: false }).limit(100);
-        if (error) return errorResponse('No se pudieron cargar los anuncios del curso.', 409);
-        return json({ data: data || [] });
-    }
-    const title = typeof payload.title === 'string' ? payload.title.trim() : '';
-    const body = typeof payload.body === 'string' ? payload.body.trim() : '';
-    if (title.length < 3 || title.length > 120 || !body || body.length > 3000) {
-        return errorResponse('Completa un título y un mensaje de hasta 3000 caracteres.');
-    }
-    const { data: offering, error: offeringError } = courseOfferingId
-        ? await admin.from('course_offerings').select('id,section_id,academic_year_id')
-            .eq('id', courseOfferingId).eq('institution_id', membership.institution_id)
-            .eq('section_id', sectionId).eq('academic_year_id', academicYearId).maybeSingle()
-        : { data: null, error: null };
-    if (courseOfferingId && (offeringError || !offering)) return errorResponse('No encontramos el curso asignado.', 404);
-    const { data, error } = await admin.from('course_announcements').insert({
-        institution_id: membership.institution_id,
-        academic_year_id: academicYearId,
-        section_id: sectionId,
-        course_offering_id: courseOfferingId || null,
-        author_membership_id: membership.id,
-        title,
-        body,
-    }).select('id,title,body,created_at').single();
-    if (error) return errorResponse('No se pudo guardar el anuncio. Revisa que la migración de anuncios esté aplicada.', 409);
-    return json({ data }, 201);
-}
-
 async function handleClassAnnouncements(admin, caller, payload) {
-    const { classroomId, action } = payload || {};
-    if (payload?.sectionId) {
-        const modernMembership = await assignedModernTeacher(admin, caller, payload);
-        if (!modernMembership) return errorResponse('Tu cuenta docente no tiene asignado este curso.', 403);
-        return handleModernCourseAnnouncements(admin, modernMembership, payload);
-    }
+    const classroomId = payload?.classroomId || payload?.sectionId;
+    const { action } = payload || {};
     if (!classroomId) return errorResponse('El aula no es válida.');
     const membership = await assignedMembership(admin, caller, classroomId);
     if (!membership) return errorResponse('No tienes permiso para ver los anuncios de esta aula.', 403);
@@ -322,7 +241,7 @@ async function handleClassAnnouncements(admin, caller, payload) {
         const { data, error } = await admin.from('student_updates')
             .select('id,title,body,priority,visible_from,created_at')
             .eq('institution_id', membership.institution_id).eq('classroom_id', classroomId)
-            .eq('audience_type', 'CLASSROOM').eq('update_type', 'ANNOUNCEMENT')
+            .eq('update_type', 'ANNOUNCEMENT')
             .order('created_at', { ascending: false }).limit(100);
         if (error) return errorResponse('No se pudieron cargar los anuncios del aula.', 409);
         return json({ data: data || [] });
@@ -338,8 +257,6 @@ async function handleClassAnnouncements(admin, caller, payload) {
     const { data, error } = await admin.from('student_updates').insert({
         institution_id: membership.institution_id,
         author_membership_id: membership.id,
-        audience_type: 'CLASSROOM',
-        academic_year_id: classroom.academic_year_id,
         classroom_id: classroom.id,
         update_type: 'ANNOUNCEMENT',
         title,

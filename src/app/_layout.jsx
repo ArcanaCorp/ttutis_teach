@@ -28,6 +28,7 @@ export default function RootLayout() {
                 <Stack.Screen name="login" />
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="class/[id]" />
+                <Stack.Screen name="student/[id]" />
             </Stack>
         </AuthProvider>
     );

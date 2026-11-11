@@ -10,11 +10,14 @@ function displayStudent(row) {
         id: row.student_id || student?.id,
         enrollmentId: row.id,
         name: [student?.first_names, student?.last_names].filter(Boolean).join(' ') || 'Alumno',
+        firstNames: student?.first_names || '',
+        lastNames: student?.last_names || '',
         code: student?.student_code || '',
+        status: student?.status || '',
     };
 }
 
-export async function getScheduleDetail(scheduleId, institutionId) {
+export async function getScheduleDetail(scheduleId, institutionId, membershipId) {
     if (!supabase || !scheduleId || !institutionId) return null;
     const { data, error } = await supabase.from('schedules')
         .select('id,weekday,start_time,end_time,classroom_label,course_assignment_id,course_assignments(id,academic_year_id,classroom_id,subjects(name),classrooms(id,grade_label,section_name))')
@@ -33,6 +36,11 @@ export async function getScheduleDetail(scheduleId, institutionId) {
     const students = rosterResult.error ? [] : (rosterResult.data || [])
         .filter((row) => first(row.students)?.status === 'ACTIVE')
         .map(displayStudent).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const { data: tutorAssignment } = membershipId
+        ? await supabase.from('classroom_staff').select('id')
+            .eq('institution_id', institutionId).eq('classroom_id', classroom.id)
+            .eq('membership_id', membershipId).eq('assignment_role', 'TUTOR').eq('status', 'ACTIVE').maybeSingle()
+        : { data: null };
 
     return {
         ...data,
@@ -43,6 +51,7 @@ export async function getScheduleDetail(scheduleId, institutionId) {
         academicYearId: assignment.academic_year_id,
         courseAssignmentId: assignment.id,
         students,
+        isTutor: Boolean(tutorAssignment),
         rosterError: rosterResult.error?.message || '',
     };
 }
@@ -77,6 +86,47 @@ async function getModernScheduleDetail(scheduleId, institutionId) {
         academicYearId: schedule.academic_year_id,
         courseAssignmentId: offering?.id || null,
         students,
+    };
+}
+
+
+export async function getStudentDetail(studentId, institutionId, classroomId) {
+    if (!supabase || !studentId || !institutionId || !classroomId) return null;
+    const { data: enrollment, error: enrollmentError } = await supabase.from('enrollments')
+        .select('id,academic_year_id,classroom_id,enrolled_at,status,classrooms(grade_label,section_name),academic_years(name)')
+        .eq('institution_id', institutionId).eq('student_id', studentId)
+        .eq('classroom_id', classroomId).eq('status', 'ACTIVE').maybeSingle();
+    if (enrollmentError || !enrollment) return null;
+
+    const { data: student, error: studentError } = await supabase.from('students')
+        .select('id,institution_id,first_names,last_names,document_type,document_number,birth_date,phone,email,student_code,admission_date,status,membership_id')
+        .eq('institution_id', institutionId).eq('id', studentId).maybeSingle();
+    if (studentError || !student) return null;
+
+    const [updatesResult, attendanceResult] = await Promise.all([
+        supabase.from('student_updates')
+            .select('id,update_type,title,body,priority,created_at')
+            .eq('institution_id', institutionId).eq('student_id', studentId)
+            .order('created_at', { ascending: false }).limit(30),
+        supabase.from('attendance_events')
+            .select('id,event_type,occurred_at,notes')
+            .eq('institution_id', institutionId).eq('student_id', studentId)
+            .order('occurred_at', { ascending: false }).limit(30),
+    ]);
+    const classroom = first(enrollment.classrooms);
+    const academicYear = first(enrollment.academic_years);
+    return {
+        ...student,
+        academic_year_id: enrollment.academic_year_id,
+        fullName: [student.first_names, student.last_names].filter(Boolean).join(' '),
+        classroomName: [classroom?.grade_label, classroom?.section_name].filter(Boolean).join(' '),
+        academicYearName: academicYear?.name || '',
+        enrolledAt: enrollment.enrolled_at,
+        guardians: null,
+        updates: updatesResult.data || [],
+        attendance: attendanceResult.data || [],
+        updatesError: updatesResult.error?.message || '',
+        attendanceError: attendanceResult.error?.message || '',
     };
 }
 
