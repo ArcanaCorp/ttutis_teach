@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { FileText, Plus, ChevronDown, ChevronUp, UserRound, X } from 'lucide-react-native';
 import Screen from '../../components/ui/Screen';
 import TextApp from '../../components/ui/TextApp';
@@ -14,16 +15,17 @@ const clean = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\
 
 export default function AssistantReports() {
     const { staff } = useAuth();
+    const params = useLocalSearchParams();
     const [groups, setGroups] = useState([]);
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState('');
-    const [showForm, setShowForm] = useState(false);
+    const [showForm, setShowForm] = useState(Boolean(params.studentId));
     const [saving, setSaving] = useState(false);
     const [search, setSearch] = useState('');
-    const [classroomId, setClassroomId] = useState('');
-    const [studentId, setStudentId] = useState('');
+    const [classroomId, setClassroomId] = useState(String(params.classroomId || ''));
+    const [studentId, setStudentId] = useState(String(params.studentId || ''));
     const [title, setTitle] = useState('');
     const [body, setBody] = useState('');
     const [priority, setPriority] = useState('NORMAL');
@@ -44,6 +46,7 @@ export default function AssistantReports() {
 
     useEffect(() => { let active = true; load().finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [load]);
     const selectedGroup = groups.find((group) => group.id === classroomId);
+    useEffect(() => { if (params.studentId && groups.length) { const group = groups.find((item) => item.classroomId === String(params.classroomId)); if (group) { setClassroomId(group.id); setStudentId(String(params.studentId)); setShowForm(true); } } }, [params.studentId, params.classroomId, groups]);
     const filtered = useMemo(() => reports.filter((item) => clean([item.title, item.body, item.studentName, item.studentCode, item.classroomName].join(' ')).includes(clean(search))), [reports, search]);
 
     async function refresh() { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } }
