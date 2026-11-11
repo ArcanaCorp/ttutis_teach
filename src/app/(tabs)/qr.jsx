@@ -23,7 +23,7 @@ export default function QrScanner() {
         try {
             const resolved = await resolveStudentQr(result.data);
             router.push({
-                pathname: '/(tabs)/observation',
+                pathname: '/observation',
                 params: {
                     studentId: resolved.student.id,
                     studentName: resolved.student.name,
