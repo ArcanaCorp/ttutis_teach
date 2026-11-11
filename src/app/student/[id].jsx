@@ -9,6 +9,10 @@ import { useAuth } from '../../context/AuthContext';
 import { getStudentDetail } from '../../services/academicServices';
 import { theme } from '../../constants/theme';
 
+function statusLabel(value) { return ({ ACTIVE: 'Activo', INACTIVE: 'Inactivo', PENDING: 'Pendiente', PUNCTUAL: 'Puntual', LATE: 'Tarde', ABSENCE: 'Falta', JUSTIFIED: 'Justificada' }[String(value || '').toUpperCase()] || value || 'No registrado'); }
+function updateTypeLabel(value) { return ({ REPORT: 'Reporte', BEHAVIOR: 'Incidencia', CITATION: 'Citación', ANNOUNCEMENT: 'Anuncio', RECOMMENDATION: 'Seguimiento', NOTIFICATION: 'Notificación', OBSERVATION: 'Observación' }[String(value || '').toUpperCase()] || value || 'Registro'); }
+function eventTypeLabel(value) { return ({ ENTRY: 'Ingreso', EXIT: 'Salida', PUNCTUAL: 'Puntual', LATE: 'Tardanza', ABSENCE: 'Falta', JUSTIFIED: 'Justificada' }[String(value || '').toUpperCase()] || value || 'Registro'); }
+
 function dateLabel(value) {
     if (!value) return 'No registrado';
     const date = new Date(`${value}T12:00:00`);
@@ -103,7 +107,7 @@ export default function StudentDetail() {
                         <View style={{ flex: 1, gap: 3 }}>
                             <TextApp size="lg" variant="bold">{student.fullName}</TextApp>
                             <TextApp size="xs" color={theme.colors.text.secondary}>Código: {student.student_code || 'Sin código'}</TextApp>
-                            <TextApp size="xs" color={theme.colors.text.secondary}>Estado: {student.status || '—'}</TextApp>
+                            <TextApp size="xs" color={theme.colors.text.secondary}>Estado: {statusLabel(student.status)}</TextApp>
                         </View>
                     </View>
 
@@ -150,7 +154,7 @@ export default function StudentDetail() {
                     {student.updates.length ? student.updates.map((item) => (
                         <View key={item.id} style={styles.historyRow}>
                             <TextApp size="sm" variant="semibold">{item.title}</TextApp>
-                            <TextApp size="xs" color={theme.colors.text.secondary}>{item.update_type} · {dateLabel(item.created_at)}</TextApp>
+                            <TextApp size="xs" color={theme.colors.text.secondary}>{updateTypeLabel(item.update_type)} · {dateLabel(item.created_at)}</TextApp>
                             {!!item.body && <TextApp size="sm" color={theme.colors.text.secondary}>{item.body}</TextApp>}
                         </View>
                     )) : <TextApp size="sm" color={theme.colors.text.tertiary}>{student.updatesError ? 'No fue posible consultar las comunicaciones con los permisos actuales.' : 'Todavía no hay registros.'}</TextApp>}
@@ -158,7 +162,7 @@ export default function StudentDetail() {
                     <TextApp size="md" variant="semibold">Asistencia reciente</TextApp>
                     {student.attendance.length ? student.attendance.map((item) => (
                         <View key={item.id} style={styles.historyRow}>
-                            <TextApp size="sm" variant="semibold">{item.event_type}</TextApp>
+                            <TextApp size="sm" variant="semibold">{eventTypeLabel(item.event_type)}</TextApp>
                             <TextApp size="xs" color={theme.colors.text.secondary}>{new Date(item.occurred_at).toLocaleString('es-PE')}</TextApp>
                             {!!item.notes && <TextApp size="sm" color={theme.colors.text.secondary}>{item.notes}</TextApp>}
                         </View>
