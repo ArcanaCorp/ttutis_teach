@@ -14,7 +14,6 @@ export default function AssistantQrScanner() {
     const [scanned, setScanned] = useState(false);
     const [busy, setBusy] = useState(false);
     const [torch, setTorch] = useState(false);
-    const [lastResult, setLastResult] = useState(null);
     const scanLock = useRef(false);
     const focused = useIsFocused();
 
@@ -23,7 +22,6 @@ export default function AssistantQrScanner() {
         scanLock.current = true;
         setScanned(true);
         setBusy(true);
-        setLastResult(null);
         try {
             const response = await recordAssistantAttendance(result.data);
             const status = response?.event?.attendance_status;
@@ -35,7 +33,6 @@ export default function AssistantQrScanner() {
                 alreadyRecorded: Boolean(response?.alreadyRecorded),
                 eventId: response?.event?.id,
             };
-            setLastResult(detail);
             Alert.alert(
                 response?.alreadyRecorded ? 'Asistencia ya registrada' : 'Asistencia registrada',
                 `${detail.name}\n${detail.code ? `Código: ${detail.code}\n` : ''}Estado: ${detail.status}${response?.alreadyRecorded ? '\nEste alumno ya tenía un registro hoy.' : ''}`,
@@ -62,7 +59,7 @@ export default function AssistantQrScanner() {
             </View>
 
             {!permission ? (
-                <View style={styles.permission}><ActivityIndicator color={theme.colors.primary[700} /></View>
+                <View style={styles.permission}><ActivityIndicator color={theme.colors.primary[700]} /></View>
             ) : !permission.granted ? (
                 <View style={styles.permission}>
                     <View style={styles.permissionIcon}><Camera size={30} color={theme.colors.primary[800]} /></View>
@@ -88,9 +85,7 @@ export default function AssistantQrScanner() {
                         </TextApp>
                     </View>
                     <View style={styles.controls}>
-                        <Button size="sm" variant="secondary" onPress={() => setTorch((value) => !value)}>
-                            <Flashlight size={16} color={theme.colors.text.primary} /> {torch ? 'Apagar linterna' : 'Linterna'}
-                        </Button>
+                        <Button size="sm" variant="secondary" icon={Flashlight} onPress={() => setTorch((value) => !value)}>{torch ? 'Apagar linterna' : 'Linterna'}</Button>
                         {scanned && !busy && <Button size="sm" onPress={() => { scanLock.current = false; setScanned(false); }}>Escanear otro</Button>}
                     </View>
                     {busy && (
