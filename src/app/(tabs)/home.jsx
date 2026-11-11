@@ -20,11 +20,15 @@ export default function Home() {
     const { session, staff } = useAuth();
     const today = useMemo(() => new Date(), []);
     const todayLabel = `${weekdayLabels[today.getDay()]}, ${today.toLocaleDateString('es-PE', { day: 'numeric', month: 'long' })}`;
-    const loadSchedule = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
-        ? getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
-        : Promise.resolve([]), [session?.user?.id, staff?.role, staff?.institutionId, staff?.membershipId]);
+    const userId = session?.user?.id;
+    const staffRole = staff?.role;
+    const institutionId = staff?.institutionId;
+    const membershipId = staff?.membershipId;
+    const loadSchedule = useCallback(() => staffRole === 'TEACHER' && institutionId
+        ? getTeacherSchedule({ userId, institutionId, membershipId })
+        : Promise.resolve([]), [userId, staffRole, institutionId, membershipId]);
     const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
-    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, loadSchedule, 5 * 60 * 1000);
+    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, loadSchedule, 15 * 60 * 1000);
     const schedule = data || [];
     const todaysClasses = schedule.filter((item) => Number(item.weekday) === (today.getDay() || 7));
 
