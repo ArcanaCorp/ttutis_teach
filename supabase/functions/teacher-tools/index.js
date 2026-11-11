@@ -185,7 +185,6 @@ async function handleCreateObservation(admin, caller, payload) {
         const { data, error } = await admin.from('student_updates').insert({
             institution_id: membership.institution_id,
             author_membership_id: membership.id,
-            audience_type: 'STUDENT',
             student_id: studentId,
             update_type: 'BEHAVIOR',
             title: cleanTitle,
@@ -218,8 +217,6 @@ async function handleCreateCitation(admin, caller, payload) {
         const { data, error } = await admin.from('student_updates').insert({
             institution_id: membership.institution_id,
             author_membership_id: membership.id,
-            audience_type: 'CLASSROOM',
-            academic_year_id: classroom.academic_year_id,
             classroom_id: classroom.id,
             update_type: 'CITATION',
             title: cleanTitle,
@@ -322,7 +319,7 @@ async function handleClassAnnouncements(admin, caller, payload) {
         const { data, error } = await admin.from('student_updates')
             .select('id,title,body,priority,visible_from,created_at')
             .eq('institution_id', membership.institution_id).eq('classroom_id', classroomId)
-            .eq('audience_type', 'CLASSROOM').eq('update_type', 'ANNOUNCEMENT')
+            .eq('update_type', 'ANNOUNCEMENT')
             .order('created_at', { ascending: false }).limit(100);
         if (error) return errorResponse('No se pudieron cargar los anuncios del aula.', 409);
         return json({ data: data || [] });
