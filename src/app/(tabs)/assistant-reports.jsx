@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { FileText, Plus, X } from 'lucide-react-native';
@@ -15,7 +15,12 @@ const clean = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\
 
 export default function AssistantReports() {
     const { staff } = useAuth();
+    const institutionId = staff?.institutionId;
+    const membershipId = staff?.membershipId;
     const params = useLocalSearchParams();
+    const routeParamsApplied = useRef(false);
+    const routeStudentId = params.studentId ? String(params.studentId) : '';
+    const routeClassroomId = params.classroomId ? String(params.classroomId) : '';
     const [groups, setGroups] = useState([]);
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -31,22 +36,40 @@ export default function AssistantReports() {
     const [priority, setPriority] = useState('NORMAL');
 
     const load = useCallback(async () => {
-        if (!staff?.institutionId || !staff?.membershipId) return;
-        setError('');
+        if (!institutionId || !membershipId) return;
         try {
             const [nextGroups, nextReports] = await Promise.all([
-                getAssistantGroups({ institutionId: staff.institutionId, membershipId: staff.membershipId }),
-                getAssistantReports({ institutionId: staff.institutionId, membershipId: staff.membershipId }),
+                getAssistantGroups({ institutionId, membershipId }),
+                getAssistantReports({ institutionId, membershipId }),
             ]);
+            setError('');
             setGroups(nextGroups);
             setReports(nextReports);
             setClassroomId((current) => current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id || '');
+            if (!routeParamsApplied.current) {
+                routeParamsApplied.current = true;
+                if (routeStudentId) {
+                    const routeGroup = nextGroups.find((group) => group.classroomId === routeClassroomId);
+                    if (routeGroup) {
+                        setClassroomId(routeGroup.id);
+                        setStudentId(routeStudentId);
+                        setShowForm(true);
+                    }
+                }
+            }
         } catch (e) { setError(e.message || 'No se pudo cargar la información.'); }
-    }, [staff?.institutionId, staff?.membershipId]);
+    }, [institutionId, membershipId, routeStudentId, routeClassroomId]);
 
-    useEffect(() => { let active = true; load().finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [load]);
+    useEffect(() => {
+        let active = true;
+        const run = async () => {
+            await load();
+            if (active) setLoading(false);
+        };
+        run();
+        return () => { active = false; };
+    }, [load]);
     const selectedGroup = groups.find((group) => group.id === classroomId);
-    useEffect(() => { if (params.studentId && groups.length) { const group = groups.find((item) => item.classroomId === String(params.classroomId)); if (group) { setClassroomId(group.id); setStudentId(String(params.studentId)); setShowForm(true); } } }, [params.studentId, params.classroomId, groups]);
     const filtered = useMemo(() => reports.filter((item) => clean([item.title, item.body, item.studentName, item.studentCode, item.classroomName].join(' ')).includes(clean(search))), [reports, search]);
 
     async function refresh() { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } }
@@ -55,7 +78,7 @@ export default function AssistantReports() {
         if (!title.trim() || !body.trim()) { Alert.alert('Completa el reporte', 'Agrega un título y describe la incidencia.'); return; }
         setSaving(true);
         try {
-            await createAssistantReport({ institutionId: staff.institutionId, membershipId: staff.membershipId, classroomId, studentId: studentId || null, title, body, priority });
+            await createAssistantReport({ institutionId, membershipId, classroomId, studentId: studentId || null, title, body, priority });
             setTitle(''); setBody(''); setStudentId(''); setPriority('NORMAL'); setShowForm(false);
             await load();
             Alert.alert('Reporte registrado', 'El reporte se guardó correctamente.');
