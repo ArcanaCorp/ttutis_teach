@@ -378,7 +378,16 @@ async function handleCreateAssistantCommunication(admin, caller, payload) {
         const { data: classroom, error } = await admin.from('classrooms').select('id')
             .eq('id', classroomId).eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').maybeSingle();
         if (error || !classroom) return errorResponse('El salón no pertenece a tu institución o no está activo.', 403);
-        rows = [{ student_id: null, classroom_id: classroom.id }];
+        const { data: enrollments, error: enrollmentError } = await admin.from('enrollments')
+            .select('student_id').eq('institution_id', membership.institution_id)
+            .eq('classroom_id', classroom.id).eq('status', 'ACTIVE');
+        if (enrollmentError) return errorResponse('No se pudieron consultar los alumnos del salón.', 500);
+        const studentIds = [...new Set((enrollments || []).map((item) => item.student_id))];
+        if (!studentIds.length) return errorResponse('Este salón no tiene alumnos con matrícula activa.');
+        const { data: activeStudents, error: studentsError } = await admin.from('students').select('id')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', studentIds);
+        if (studentsError) return errorResponse('No se pudieron validar los alumnos del salón.', 500);
+        rows = (activeStudents || []).map((item) => ({ student_id: item.id, classroom_id: classroom.id }));
     } else if (updateType === 'ANNOUNCEMENT') {
         rows = [{ student_id: null, classroom_id: null }];
     } else {
