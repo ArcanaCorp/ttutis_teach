@@ -95,22 +95,26 @@ export async function getStudentDetail(studentId, institutionId, classroomId, en
         throw new Error('Faltan datos para consultar la ficha del alumno.');
     }
 
-    let enrollmentQuery = supabase.from('enrollments')
-        .select('id,academic_year_id,classroom_id,enrolled_at,status')
-        .eq('institution_id', institutionId)
-        .eq('student_id', studentId)
-        .eq('status', 'ACTIVE');
+    let enrollment = null;
+    if (enrollmentId || classroomId) {
+        let enrollmentQuery = supabase.from('enrollments')
+            .select('id,academic_year_id,classroom_id,enrolled_at,status')
+            .eq('institution_id', institutionId)
+            .eq('student_id', studentId)
+            .eq('status', 'ACTIVE');
 
-    enrollmentQuery = enrollmentId
-        ? enrollmentQuery.eq('id', enrollmentId)
-        : enrollmentQuery.eq('classroom_id', classroomId || '');
+        enrollmentQuery = enrollmentId
+            ? enrollmentQuery.eq('id', enrollmentId)
+            : enrollmentQuery.eq('classroom_id', classroomId);
 
-    const { data: enrollment, error: enrollmentError } = await enrollmentQuery.maybeSingle();
-    if (enrollmentError) {
-        throw new Error(`No se pudo verificar la matrícula: ${enrollmentError.message}`);
-    }
-    if (!enrollment) {
-        throw new Error('No encontramos una matrícula activa de este alumno en el aula seleccionada.');
+        const { data, error: enrollmentError } = await enrollmentQuery.maybeSingle();
+        if (enrollmentError) {
+            throw new Error(`No se pudo verificar la matrícula: ${enrollmentError.message}`);
+        }
+        enrollment = data;
+        if (!enrollment) {
+            throw new Error('No encontramos una matrícula activa del alumno en el aula seleccionada.');
+        }
     }
 
     const { data: student, error: studentError } = await supabase.from('students')
@@ -122,10 +126,14 @@ export async function getStudentDetail(studentId, institutionId, classroomId, en
     if (!student) throw new Error('No encontramos los datos personales de este alumno.');
 
     const [classroomResult, yearResult, updatesResult, attendanceResult] = await Promise.all([
-        supabase.from('classrooms').select('grade_label,section_name')
-            .eq('institution_id', institutionId).eq('id', enrollment.classroom_id).maybeSingle(),
-        supabase.from('academic_years').select('name')
-            .eq('institution_id', institutionId).eq('id', enrollment.academic_year_id).maybeSingle(),
+        enrollment
+            ? supabase.from('classrooms').select('grade_label,section_name')
+                .eq('institution_id', institutionId).eq('id', enrollment.classroom_id).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        enrollment
+            ? supabase.from('academic_years').select('name')
+                .eq('institution_id', institutionId).eq('id', enrollment.academic_year_id).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
         supabase.from('student_updates').select('id,update_type,title,body,priority,created_at')
             .eq('institution_id', institutionId).eq('student_id', studentId)
             .order('created_at', { ascending: false }).limit(30),
@@ -136,11 +144,11 @@ export async function getStudentDetail(studentId, institutionId, classroomId, en
 
     return {
         ...student,
-        academic_year_id: enrollment.academic_year_id,
+        academic_year_id: enrollment?.academic_year_id || null,
         fullName: [student.first_names, student.last_names].filter(Boolean).join(' '),
         classroomName: [classroomResult.data?.grade_label, classroomResult.data?.section_name].filter(Boolean).join(' '),
         academicYearName: yearResult.data?.name || '',
-        enrolledAt: enrollment.enrolled_at,
+        enrolledAt: enrollment?.enrolled_at || null,
         guardians: null,
         updates: updatesResult.data || [],
         attendance: attendanceResult.data || [],
