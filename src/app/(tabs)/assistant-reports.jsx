@@ -21,6 +21,7 @@ const types = [
     { value: 'NOTIFICATION', label: 'Notificación', description: 'Aviso puntual' },
 ];
 const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+const levelLabel = (value) => ({ INITIAL: 'Inicial', PRIMARY: 'Primaria', SECONDARY: 'Secundaria' }[String(value || '').toUpperCase()] || value || 'Sin nivel');
 const priorityLabel = (value) => priorities.find((item) => item.value === value)?.label || value;
 const typeLabel = (value) => types.find((item) => item.value === value)?.label || value;
 
@@ -111,7 +112,7 @@ export default function AssistantReports() {
     }, [students, recipientSearch, recipientClassroomId]);
     const classroomOptions = useMemo(() => [
         { value: 'ALL', label: 'Todos los salones' },
-        ...classrooms.map((item) => ({ value: item.id, label: [item.label, item.level].filter(Boolean).join(' · ') })),
+        ...classrooms.map((item) => ({ value: item.id, label: [item.label, levelLabel(item.level)].filter(Boolean).join(' · ') })),
     ], [classrooms]);
 
     async function refresh() { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } }
@@ -229,7 +230,7 @@ export default function AssistantReports() {
                             value={classroomId}
                             onChange={setClassroomId}
                             placeholder="Seleccionar salón"
-                            options={classrooms.map((item) => ({ value: item.id, label: [item.label, item.level].filter(Boolean).join(' · ') }))}
+                            options={classrooms.map((item) => ({ value: item.id, label: [item.label, levelLabel(item.level)].filter(Boolean).join(' · ') }))}
                         />
                     </>}
                     {targetType === 'INSTITUTION' && <View style={s.institutionNote}><Megaphone size={18} color={theme.colors.primary[700]} /><TextApp size="xs" color={theme.colors.text.secondary}>Se registrará para toda la institución. Los anuncios institucionales quedarán como un único aviso general; los demás tipos se registrarán para cada alumno activo.</TextApp></View>}
