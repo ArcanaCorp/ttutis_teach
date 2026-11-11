@@ -45,7 +45,7 @@ export default function ClassDetail() {
     const [refreshing, setRefreshing] = useState(false);
 
     const load = useCallback(async () => {
-        const classDetail = await getScheduleDetail(String(id || ''), staff?.institutionId);
+        const classDetail = await getScheduleDetail(String(id || ''), staff?.institutionId, staff?.membershipId);
         setDetail(classDetail);
         if (classDetail?.classroomId && staff?.membershipId) {
             const result = await getAssessments(staff.institutionId, staff.membershipId);
