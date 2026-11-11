@@ -15,6 +15,7 @@ export default function QrScanner() {
     const [busy, setBusy] = useState(false);
     const [torch, setTorch] = useState(false);
     const scanLock = useRef(false);
+    const scanLock = useRef(false);
     const focused = useIsFocused();
 
     async function onBarcodeScanned(result) {
