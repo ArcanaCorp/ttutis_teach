@@ -1,28 +1,5 @@
 import { supabase } from '../libs/supabase';
 
-async function invokeAttendance(action, body) {
-    if (!supabase) throw new Error('La conexión con TTUTIS no está disponible.');
-    const { data, error } = await supabase.functions.invoke('teacher-tools', { body: { action, ...body } });
-    if (error) {
-        let message = 'No se pudo completar la operación de asistencia.';
-        try {
-            const payload = await error.context?.json?.();
-            if (payload?.error) message = payload.error;
-        } catch { /* Keep the safe fallback. */ }
-        throw new Error(message);
-    }
-    if (data?.error) throw new Error(data.error);
-    return data;
-}
-
-export async function recordAssistantAttendance(value) {
-    return invokeAttendance('record_assistant_attendance', { value });
-}
-
-export async function justifyAssistantAbsence(eventId, reason) {
-    return invokeAttendance('justify_assistant_absence', { eventId, reason });
-}
-
 export async function resolveStudentQr(value) {
     if (!supabase) throw new Error('La conexión con TTUTIS no está disponible.');
     const { data, error } = await supabase.functions.invoke('teacher-tools', {
@@ -74,5 +51,37 @@ export async function createClassAnnouncement({ classroomId, sectionId, courseOf
         body: { action: 'create_announcement', classroomId, sectionId, courseOfferingId, academicYearId, title, body },
     });
     if (error) throw new Error(await functionErrorMessage(error, 'No se pudo publicar el anuncio. Verifica que el aula esté asignada a tu cuenta.'));
+    return data?.data;
+}
+
+export async function recordAssistantAttendance(value) {
+    if (!supabase) {
+        const unavailable = new Error('La conexión con TTUTIS no está disponible.');
+        unavailable.retryable = true;
+        throw unavailable;
+    }
+    const { data, error } = await supabase.functions.invoke('teacher-tools', {
+        body: { action: 'record_assistant_attendance', value },
+    });
+    if (error) {
+        const failure = new Error(await functionErrorMessage(error, 'No se pudo registrar la asistencia.'));
+        failure.status = error.context?.status;
+        throw failure;
+    }
+    if (data?.error) {
+        const failure = new Error(data.error);
+        failure.status = data.status;
+        throw failure;
+    }
+    return data;
+}
+
+export async function justifyAssistantAbsence(eventId, reason) {
+    if (!supabase) throw new Error('La conexión con TTUTIS no está disponible.');
+    const { data, error } = await supabase.functions.invoke('teacher-tools', {
+        body: { action: 'justify_assistant_absence', eventId, reason },
+    });
+    if (error) throw new Error(await functionErrorMessage(error, 'No se pudo guardar la justificación.'));
+    if (data?.error) throw new Error(data.error);
     return data?.data;
 }
