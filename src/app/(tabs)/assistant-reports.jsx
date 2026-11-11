@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { FileText, Plus, ChevronDown, ChevronUp, UserRound, X } from 'lucide-react-native';
+import { FileText, Plus, X } from 'lucide-react-native';
 import Screen from '../../components/ui/Screen';
 import TextApp from '../../components/ui/TextApp';
 import Input from '../../components/ui/Input';
