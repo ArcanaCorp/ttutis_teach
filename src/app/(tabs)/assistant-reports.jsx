@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { FileText, Plus, X, Users, UserRound, GraduationCap, Megaphone, Check } from 'lucide-react-native';
+import { FileText, Plus, X, Megaphone, Check } from 'lucide-react-native';
 import Screen from '../../components/ui/Screen';
 import TextApp from '../../components/ui/TextApp';
 import Input from '../../components/ui/Input';
