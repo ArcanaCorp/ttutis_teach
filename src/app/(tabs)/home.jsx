@@ -16,7 +16,6 @@ function formatTime(value) { return value ? value.slice(0, 5) : ''; }
 
 export default function Home() {
     const { session, staff, staffLoading } = useAuth();
-    if (staff?.role === 'ASSISTANT') return <AssistantHome />;
     const today = useMemo(() => new Date(), []);
     const todayLabel = `${weekdayLabels[today.getDay()]}, ${today.toLocaleDateString('es-PE', { day: 'numeric', month: 'long' })}`;
     const loadSchedule = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
@@ -26,6 +25,7 @@ export default function Home() {
     const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, loadSchedule, 15 * 60 * 1000, !staffLoading);
     const schedule = data || [];
     const todaysClasses = schedule.filter((item) => Number(item.weekday) === (today.getDay() || 7));
+    if (staff?.role === 'ASSISTANT') return <AssistantHome />;
     const firstName = staff?.displayName?.split(' ')[0] || 'Hola';
     return (
         <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[theme.colors.primary[700]]} />}>
