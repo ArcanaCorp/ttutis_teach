@@ -98,7 +98,7 @@ export default function AssistantQrScanner() {
                 <View style={styles.permission}>
                     <View style={styles.permissionIcon}><Camera size={30} color={theme.colors.primary[800]} /></View>
                     <TextApp size="lg" variant="semibold">Permite el acceso a la cámara</TextApp>
-                    <TextApp size="sm" color={theme.colors.text.secondary} align="center}>La cámara se utiliza únicamente para leer el código QR del alumno.</TextApp>
+                    <TextApp size="sm" color={theme.colors.text.secondary} align="center">La cámara se utiliza únicamente para leer el código QR del alumno.</TextApp>
                     <Button onPress={requestPermission}>Permitir cámara</Button>
                 </View>
             ) : (
