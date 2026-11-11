@@ -17,7 +17,7 @@ function displayStudent(row) {
     };
 }
 
-export async function getScheduleDetail(scheduleId, institutionId) {
+export async function getScheduleDetail(scheduleId, institutionId, membershipId) {
     if (!supabase || !scheduleId || !institutionId) return null;
     const { data, error } = await supabase.from('schedules')
         .select('id,weekday,start_time,end_time,classroom_label,course_assignment_id,course_assignments(id,academic_year_id,classroom_id,subjects(name),classrooms(id,grade_label,section_name))')
@@ -36,6 +36,11 @@ export async function getScheduleDetail(scheduleId, institutionId) {
     const students = rosterResult.error ? [] : (rosterResult.data || [])
         .filter((row) => first(row.students)?.status === 'ACTIVE')
         .map(displayStudent).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const { data: tutorAssignment } = membershipId
+        ? await supabase.from('classroom_staff').select('id')
+            .eq('institution_id', institutionId).eq('classroom_id', classroom.id)
+            .eq('membership_id', membershipId).eq('assignment_role', 'TUTOR').eq('status', 'ACTIVE').maybeSingle()
+        : { data: null };
 
     return {
         ...data,
@@ -46,6 +51,7 @@ export async function getScheduleDetail(scheduleId, institutionId) {
         academicYearId: assignment.academic_year_id,
         courseAssignmentId: assignment.id,
         students,
+        isTutor: Boolean(tutorAssignment),
         rosterError: rosterResult.error?.message || '',
     };
 }
@@ -114,6 +120,7 @@ export async function getStudentDetail(studentId, institutionId, classroomId) {
     const academicYear = first(enrollment.academic_years);
     return {
         ...student,
+        academic_year_id: enrollment.academic_year_id,
         fullName: [student.first_names, student.last_names].filter(Boolean).join(' '),
         classroomName: [classroom?.grade_label, classroom?.section_name].filter(Boolean).join(' '),
         academicYearName: academicYear?.name || '',
