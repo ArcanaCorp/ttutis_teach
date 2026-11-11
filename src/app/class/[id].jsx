@@ -21,7 +21,9 @@ const tabs = [
 function formatDate(value) {
     if (!value) return 'Fecha pendiente';
     const date = new Date(`${value}T12:00:00`);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' });
+    if (Number.isNaN(date.getTime())) return value;
+    const month = new Intl.DateTimeFormat('es-PE', { month: 'short' }).format(date).replace('.', '');
+    return `${date.getDate()} de ${month} ${date.getFullYear()}`;
 }
 
 export default function ClassDetail() {
