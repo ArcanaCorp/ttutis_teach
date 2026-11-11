@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Bell, CalendarDays, ClipboardPenLine, FileText, GraduationCap, Mail, Phone, UserRound } from 'lucide-react-native';
+import { ArrowLeft, Bell, CalendarDays, ClipboardPenLine, FileText, GraduationCap, Mail, Phone, UserRound, Flag } from 'lucide-react-native';
 import Screen from '../../components/ui/Screen';
 import TextApp from '../../components/ui/TextApp';
 import Button from '../../components/ui/Button';
@@ -30,6 +30,7 @@ function InfoRow({ icon: Icon, label, value }) {
 export default function StudentDetail() {
     const params = useLocalSearchParams();
     const { staff } = useAuth();
+    const isAssistant = staff?.role === 'ASSISTANT' || String(params.assistantMode) === 'true';
     const [student, setStudent] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -76,6 +77,10 @@ export default function StudentDetail() {
         });
     }
 
+    function openAssistantReport() {
+        router.push({ pathname: '/(tabs)/assistant-reports', params: { studentId: student.id, classroomId: String(params.classroomId || ''), studentName: student.fullName } });
+    }
+
     function openAnnouncements() {
         router.push({ pathname: '/class/[id]', params: { id: String(params.scheduleId || ''), initialTab: 'announcements' } });
     }
@@ -103,20 +108,29 @@ export default function StudentDetail() {
                     </View>
 
                     <TextApp size="md" variant="semibold">Acciones</TextApp>
-                    <View style={styles.actions}>
-                        <Pressable style={styles.action} onPress={openAnnouncements} accessibilityRole="button">
-                            <Bell size={19} color={theme.colors.primary[800]} />
-                            <TextApp size="xs" variant="semibold">Enviar anuncio</TextApp>
-                        </Pressable>
-                        <Pressable style={styles.action} onPress={openObservation} accessibilityRole="button">
-                            <ClipboardPenLine size={19} color={theme.colors.primary[800]} />
-                            <TextApp size="xs" variant="semibold">Levantar evento</TextApp>
-                        </Pressable>
-                        <Pressable style={styles.action} onPress={() => router.push('/(tabs)/assessments')} accessibilityRole="button">
-                            <GraduationCap size={19} color={theme.colors.primary[800]} />
-                            <TextApp size="xs" variant="semibold">Evaluaciones</TextApp>
-                        </Pressable>
-                    </View>
+                    {isAssistant ? (
+                        <View style={styles.actions}>
+                            <Pressable style={styles.action} onPress={openAssistantReport} accessibilityRole="button">
+                                <Flag size={19} color={theme.colors.primary[800]} />
+                                <TextApp size="xs" variant="semibold">Crear reporte</TextApp>
+                            </Pressable>
+                        </View>
+                    ) : (
+                        <View style={styles.actions}>
+                            <Pressable style={styles.action} onPress={openAnnouncements} accessibilityRole="button">
+                                <Bell size={19} color={theme.colors.primary[800]} />
+                                <TextApp size="xs" variant="semibold">Enviar anuncio</TextApp>
+                            </Pressable>
+                            <Pressable style={styles.action} onPress={openObservation} accessibilityRole="button">
+                                <ClipboardPenLine size={19} color={theme.colors.primary[800]} />
+                                <TextApp size="xs" variant="semibold">Levantar evento</TextApp>
+                            </Pressable>
+                            <Pressable style={styles.action} onPress={() => router.push('/(tabs)/assessments')} accessibilityRole="button">
+                                <GraduationCap size={19} color={theme.colors.primary[800]} />
+                                <TextApp size="xs" variant="semibold">Evaluaciones</TextApp>
+                            </Pressable>
+                        </View>
+                    )}
 
                     <TextApp size="md" variant="semibold">Datos personales</TextApp>
                     <InfoRow icon={FileText} label="Documento" value={[student.document_type, student.document_number].filter(Boolean).join(' · ')} />
