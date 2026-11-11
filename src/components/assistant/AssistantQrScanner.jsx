@@ -2,9 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     AppState,
-    Modal,
     StyleSheet,
-    TextInput,
     View,
     Vibration,
 } from 'react-native';
@@ -13,19 +11,13 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from 'expo-router';
 import {
     Camera,
-    CheckCircle2,
-    Clock3,
     Flashlight,
     QrCode,
-    XCircle,
 } from 'lucide-react-native';
 import Screen from '../ui/Screen';
 import TextApp from '../ui/TextApp';
 import Button from '../ui/Button';
-import {
-    justifyAssistantAbsence,
-    recordAssistantAttendance,
-} from '../../services/teacherTools';
+import { recordAssistantAttendance } from '../../services/teacherTools';
 import { theme } from '../../constants/theme';
 
 const STATUS_LABELS = {
@@ -39,24 +31,18 @@ const RETRY_INTERVAL_MS = 5000;
 
 export default function AssistantQrScanner() {
     const [permission, requestPermission] = useCameraPermissions();
-    const [pendingCount, setPendingCount] = useState(0);
     const [queueLoaded, setQueueLoaded] = useState(false);
     const [torch, setTorch] = useState(false);
     const [toast, setToast] = useState(null);
-
-    // Resultado confirmado por el servidor.
-    const [result, setResult] = useState(null);
-
-    // Justificación de faltas.
-    const [justificationVisible, setJustificationVisible] = useState(false);
-    const [justificationReason, setJustificationReason] = useState('');
-    const [savingJustification, setSavingJustification] = useState(false);
 
     // La cola y los bloqueos viven en refs para evitar cierres obsoletos.
     const queueRef = useRef([]);
     const queueWrite = useRef(Promise.resolve());
     const pendingScans = useRef(new Set());
     const recentScans = useRef(new Map());
+    // Evita volver a enviar el mismo QR durante esta sesión de cámara,
+    // incluso después de que el servidor haya quitado el registro de la cola.
+    const completedScans = useRef(new Set());
     const sequence = useRef(0);
     const toastSequence = useRef(0);
     const syncing = useRef(false);
@@ -75,7 +61,6 @@ export default function AssistantQrScanner() {
     const persistQueue = useCallback((nextQueue) => {
         // Actualización optimista local: la interfaz refleja la cola de inmediato.
         queueRef.current = nextQueue;
-        setPendingCount(nextQueue.length);
 
         // Serializa escrituras para que una operación lenta no sobrescriba otra.
         queueWrite.current = queueWrite.current
@@ -105,7 +90,6 @@ export default function AssistantQrScanner() {
                 }));
 
                 queueRef.current = restored;
-                setPendingCount(restored.length);
             })
             .catch((error) => {
                 console.warn(
@@ -150,6 +134,11 @@ export default function AssistantQrScanner() {
                 try {
                     const response = await recordAssistantAttendance(item.value);
 
+                    // El servidor ya respondió: este QR queda atendido durante
+                    // la sesión actual y no debe generar otro evento al seguir en cámara.
+                    completedScans.current.add(item.value);
+                    recentScans.current.set(item.value, Date.now());
+
                     // Solo se elimina de la cola después de una respuesta exitosa.
                     await persistQueue(
                         queueRef.current.filter(
@@ -162,16 +151,12 @@ export default function AssistantQrScanner() {
                     const studentName = response?.student?.name || 'Alumno';
                     const studentCode = response?.student?.code;
 
-                    // Conservamos el último resultado confirmado para permitir
-                    // justificar una falta, pero nunca detenemos ni desmontamos la cámara.
-                    setResult(response);
-
                     showToast(
                         response?.alreadyRecorded ? 'info' : 'success',
                         response?.alreadyRecorded
                             ? 'Asistencia ya registrada'
-                            : `Asistencia ${statusLabel.toLowerCase()}`,
-                        `${studentName}${studentCode ? ` · ${studentCode}` : ''}`,
+                            : 'Asistencia registrada',
+                        `${studentName}${studentCode ? ` · ${studentCode}` : ''} · ${statusLabel}`,
                     );
 
                     Vibration.vibrate(25);
@@ -219,9 +204,9 @@ export default function AssistantQrScanner() {
 
                     showToast(
                         'pending',
-                        'Guardado en este teléfono',
-                        'Se sincronizará automáticamente al recuperar conexión.',
-                        3000,
+                        'Guardado sin conexión',
+                        'Se enviará al recuperar internet.',
+                        2200,
                     );
 
                     // No se altera el orden de la cola: se reintentará más tarde.
@@ -285,10 +270,15 @@ export default function AssistantQrScanner() {
 
         // Evita duplicados simultáneos, ya en cola o repetidos inmediatamente.
         if (
-            pendingScans.current.has(value)
+            completedScans.current.has(value)
+            || pendingScans.current.has(value)
             || queueRef.current.some((item) => item.value === value)
             || (previous && now - previous < 1500)
         ) {
+            console.log(
+                '[ASSISTANT_QR] duplicate_scan_ignored',
+                JSON.stringify({ timestamp: new Date(now).toISOString() }),
+            );
             return;
         }
 
@@ -307,9 +297,9 @@ export default function AssistantQrScanner() {
         Vibration.vibrate(45);
         showToast(
             'pending',
-            'QR capturado',
-            'Guardando en el teléfono y sincronizando…',
-            1800,
+            'QR leído',
+            'Registrando asistencia…',
+            1400,
         );
 
         console.log(
@@ -353,63 +343,6 @@ export default function AssistantQrScanner() {
             pendingScans.current.delete(value);
         }
     }, [persistQueue, queueLoaded, showToast, syncQueue]);
-
-    const submitJustification = async () => {
-        const reason = justificationReason.trim();
-
-        if (!result?.event?.id || reason.length < 4) {
-            showToast(
-                'error',
-                'Motivo requerido',
-                'Escribe al menos 4 caracteres para justificar la falta.',
-                3000,
-            );
-            return;
-        }
-
-        setSavingJustification(true);
-
-        try {
-            const response = await justifyAssistantAbsence(
-                result.event.id,
-                reason,
-            );
-
-            setResult((current) => ({
-                ...current,
-                event: {
-                    ...current.event,
-                    ...response.data,
-                },
-            }));
-
-            setJustificationVisible(false);
-            setJustificationReason('');
-
-            showToast(
-                'success',
-                'Justificación guardada',
-                'La falta quedó marcada como justificada.',
-                3000,
-            );
-        } catch (error) {
-            showToast(
-                'error',
-                'No se pudo justificar',
-                error?.message || 'Inténtalo nuevamente.',
-                3500,
-            );
-        } finally {
-            setSavingJustification(false);
-        }
-    };
-
-    const status = result?.event?.attendance_status;
-    const StatusIcon = status === 'PUNCTUAL'
-        ? CheckCircle2
-        : status === 'LATE'
-            ? Clock3
-            : XCircle;
 
     const toastBackground = toast?.type === 'error'
         ? '#991B1B'
@@ -487,38 +420,6 @@ export default function AssistantQrScanner() {
                         </TextApp>
                     </View>
 
-                    {result?.event?.justification_status === 'UNJUSTIFIED' && (
-                        <View style={styles.resultNotice} pointerEvents="box-none">
-                            <StatusIcon
-                                size={18}
-                                color={
-                                    status === 'PUNCTUAL'
-                                        ? '#86efac'
-                                        : status === 'LATE'
-                                            ? '#fde68a'
-                                            : '#fecaca'
-                                }
-                            />
-                            <View style={styles.resultText}>
-                                <TextApp size="xs" variant="semibold" color="#fff">
-                                    {result.student?.name || 'Alumno'} · {STATUS_LABELS[status] || 'Registro existente'}
-                                </TextApp>
-                                <TextApp size="xs" color="#e5e7eb">
-                                    Falta confirmada por el servidor · Pendiente de justificar
-                                </TextApp>
-                            </View>
-                            {result.event?.justification_status === 'UNJUSTIFIED' && (
-                                <Button
-                                    size="sm"
-                                    variant="warning"
-                                    onPress={() => setJustificationVisible(true)}
-                                >
-                                    Justificar
-                                </Button>
-                            )}
-                        </View>
-                    )}
-
                     {toast && (
                         <View
                             key={toast.id}
@@ -539,18 +440,6 @@ export default function AssistantQrScanner() {
                         </View>
                     )}
 
-                    {pendingCount > 0 && (
-                        <View
-                            style={styles.processing}
-                            pointerEvents="none"
-                        >
-                            <ActivityIndicator size="small" color="#fff" />
-                            <TextApp size="xs" variant="semibold" color="#fff">
-                                {pendingCount} registro(s) pendiente(s) de sincronización
-                            </TextApp>
-                        </View>
-                    )}
-
                     <View style={styles.controls}>
                         <Button
                             size="sm"
@@ -564,70 +453,7 @@ export default function AssistantQrScanner() {
                 </View>
             )}
 
-            <Modal
-                visible={justificationVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => {
-                    if (!savingJustification) setJustificationVisible(false);
-                }}
-            >
-                <View style={styles.modalBackdrop}>
-                    <View style={styles.modalCard}>
-                        <TextApp size="lg" variant="bold">
-                            Justificar falta
-                        </TextApp>
 
-                        <TextApp size="sm" color={theme.colors.text.secondary}>
-                            Registra el motivo. La asistencia original se conserva
-                            y queda marcada como justificada.
-                        </TextApp>
-
-                        <TextInput
-                            value={justificationReason}
-                            onChangeText={setJustificationReason}
-                            placeholder="Motivo de la justificación"
-                            multiline
-                            maxLength={1000}
-                            textAlignVertical="top"
-                            style={styles.reasonInput}
-                        />
-
-                        <View style={styles.modalActions}>
-                            <Button
-                                variant="outline"
-                                onPress={() => setJustificationVisible(false)}
-                                disabled={savingJustification}
-                            >
-                                Cancelar
-                            </Button>
-                            <Button
-                                onPress={submitJustification}
-                                loading={savingJustification}
-                            >
-                                Guardar
-                            </Button>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
-            <View style={styles.notice}>
-                <TextApp size="sm" variant="semibold">
-                    Sincronización de asistencia
-                </TextApp>
-                <TextApp size="xs" color={theme.colors.text.secondary}>
-                    El escaneo se guarda primero en este teléfono. El servidor
-                    valida el alumno y confirma la asistencia cuando hay conexión.
-                    Los registros pendientes se reintentan mientras la aplicación
-                    está activa.
-                </TextApp>
-                <TextApp size="xs" color={theme.colors.text.secondary}>
-                    Puntual: 07:00–07:45 · Tarde: 07:45–08:00 · Desde las 08:00:
-                    falta. El servidor aplica el horario configurado para el nivel
-                    del alumno.
-                </TextApp>
-            </View>
         </Screen>
     );
 }
@@ -717,18 +543,6 @@ const styles = StyleSheet.create({
         gap: 2,
         elevation: 6,
     },
-    processing: {
-        position: 'absolute',
-        bottom: 66,
-        alignSelf: 'center',
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 7,
-        borderRadius: 20,
-        backgroundColor: 'rgba(0,0,0,0.68)',
-    },
     permission: {
         flex: 1,
         alignItems: 'center',
@@ -743,55 +557,5 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.primary[100],
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    resultNotice: {
-        position: 'absolute',
-        left: 10,
-        right: 10,
-        bottom: 58,
-        zIndex: 4,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 12,
-        backgroundColor: 'rgba(15, 23, 42, 0.90)',
-    },
-    resultText: {
-        flex: 1,
-        gap: 2,
-    },
-    notice: {
-        marginHorizontal: 20,
-        padding: 14,
-        borderRadius: 16,
-        backgroundColor: theme.colors.primary[100],
-        gap: 5,
-    },
-    modalBackdrop: {
-        flex: 1,
-        justifyContent: 'center',
-        padding: 22,
-        backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    },
-    modalCard: {
-        padding: 20,
-        borderRadius: 20,
-        backgroundColor: '#fff',
-        gap: 12,
-    },
-    reasonInput: {
-        minHeight: 110,
-        borderWidth: 1,
-        borderColor: theme.colors.border.DEFAULT,
-        borderRadius: 12,
-        padding: 12,
-        color: theme.colors.text.primary,
-    },
-    modalActions: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        gap: 10,
     },
 });
