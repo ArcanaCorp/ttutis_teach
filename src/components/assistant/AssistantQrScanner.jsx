@@ -17,12 +17,12 @@ const STATUS_LABELS = {
 
 export default function AssistantQrScanner() {
     const [permission, requestPermission] = useCameraPermissions();
-    const [scanned, setScanned] = useState(false);
-    const [busy, setBusy] = useState(false);
+    const [pendingCount, setPendingCount] = useState(0);
     const [torch, setTorch] = useState(false);
     const [toast, setToast] = useState(null);
-    const scanLock = useRef(false);
-    const lastScan = useRef(null);
+    const pendingScans = useRef(new Set());
+    const recentScans = useRef(new Map());
+    const sequence = useRef(0);
     const toastSequence = useRef(0);
     const focused = useIsFocused();
 
@@ -34,35 +34,69 @@ export default function AssistantQrScanner() {
 
     async function onScanned(result) {
         const value = typeof result?.data === 'string' ? result.data.trim() : '';
-        if (scanLock.current || !value) return;
+        if (!value) return;
 
-        // The camera can emit the same QR several times in consecutive frames.
-        // Ignore only that same code briefly; a different student can scan immediately.
         const now = Date.now();
-        if (lastScan.current?.value === value && now - lastScan.current.at < 1400) return;
+        const previous = recentScans.current.get(value);
+        if (pendingScans.current.has(value) || (previous && now - previous < 1500)) return;
 
-        scanLock.current = true;
-        lastScan.current = { value, at: now };
-        setScanned(true);
-        setBusy(true);
-        setToast(null);
+        // Only deduplicate the same QR. Different students are submitted concurrently,
+        // so the next scan never waits for the previous student's network round trip.
+        const requestId = ++sequence.current;
+        const startedAt = Date.now();
+        const started = globalThis.performance?.now?.() ?? startedAt;
+        pendingScans.current.add(value);
+        recentScans.current.set(value, now);
+        setPendingCount(pendingScans.current.size);
+
+        console.log('[ASSISTANT_QR] scan_received', JSON.stringify({
+            requestId,
+            timestamp: new Date(startedAt).toISOString(),
+            pending: pendingScans.current.size,
+        }));
+        setToast({
+            id: ++toastSequence.current,
+            type: 'pending',
+            title: 'Registrando asistencia…',
+            message: 'Puedes escanear al siguiente alumno.',
+        });
 
         try {
+            console.log('[ASSISTANT_QR] request_started', JSON.stringify({
+                requestId,
+                timestamp: new Date().toISOString(),
+            }));
             const response = await recordAssistantAttendance(value);
+            const finishedAt = Date.now();
+            const elapsedMs = Math.round((globalThis.performance?.now?.() ?? finishedAt) - started);
+            console.log('[ASSISTANT_QR] request_finished', JSON.stringify({
+                requestId,
+                timestamp: new Date(finishedAt).toISOString(),
+                elapsedMs,
+                httpResult: response?.alreadyRecorded ? 'already_recorded' : 'created',
+                studentCode: response?.student?.code || null,
+            }));
+
             const status = STATUS_LABELS[response?.event?.attendance_status] || 'Registrado';
             const studentName = response?.student?.name || 'Alumno';
             const studentCode = response?.student?.code ? ` · ${response.student.code}` : '';
             const alreadyRecorded = Boolean(response?.alreadyRecorded);
-
             setToast({
                 id: ++toastSequence.current,
                 type: alreadyRecorded ? 'info' : 'success',
                 title: alreadyRecorded ? 'Ya estaba registrada' : `Asistencia ${status.toLowerCase()}`,
-                message: `${studentName}${studentCode}`,
+                message: `${studentName}${studentCode} · ${elapsedMs} ms`,
             });
         } catch (error) {
-            // Allow the same QR to be retried immediately after a failed request.
-            lastScan.current = null;
+            const finishedAt = Date.now();
+            const elapsedMs = Math.round((globalThis.performance?.now?.() ?? finishedAt) - started);
+            console.error('[ASSISTANT_QR] request_failed', JSON.stringify({
+                requestId,
+                timestamp: new Date(finishedAt).toISOString(),
+                elapsedMs,
+                error: error?.message || 'unknown',
+            }));
+            recentScans.current.delete(value);
             setToast({
                 id: ++toastSequence.current,
                 type: 'error',
@@ -70,17 +104,15 @@ export default function AssistantQrScanner() {
                 message: error?.message || 'Verifica la conexión e inténtalo nuevamente.',
             });
         } finally {
-            // Release the scanner as soon as the server confirms or rejects the request.
-            // No button tap or modal dismissal is required for the next student.
-            scanLock.current = false;
-            setBusy(false);
-            setScanned(false);
+            pendingScans.current.delete(value);
+            setPendingCount(pendingScans.current.size);
         }
     }
 
     const toastBackground = toast?.type === 'error'
         ? '#991B1B'
-        : toast?.type === 'info' ? '#334155' : '#166534';
+        : toast?.type === 'info' ? '#334155'
+            : toast?.type === 'pending' ? '#1D4ED8' : '#166534';
 
     return (
         <Screen scroll={false} contentStyle={styles.page}>
@@ -109,7 +141,7 @@ export default function AssistantQrScanner() {
                             facing="back"
                             enableTorch={torch}
                             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                            onBarcodeScanned={scanned ? undefined : onScanned}
+                            onBarcodeScanned={onScanned}
                         />
                     )}
                     <View style={styles.overlay} pointerEvents="box-none">
@@ -132,10 +164,12 @@ export default function AssistantQrScanner() {
                         </View>
                     )}
 
-                    {busy && (
+                    {pendingCount > 0 && (
                         <View style={styles.processing} pointerEvents="none">
                             <ActivityIndicator size="small" color="#fff" />
-                            <TextApp size="xs" variant="semibold" color="#fff">Guardando…</TextApp>
+                            <TextApp size="xs" variant="semibold" color="#fff">
+                                {pendingCount} registro(s) en proceso · escáner activo
+                            </TextApp>
                         </View>
                     )}
 

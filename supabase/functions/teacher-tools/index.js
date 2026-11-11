@@ -288,26 +288,38 @@ function classifyAttendance(clock, schedule) {
     return 'CLOSED';
 }
 async function handleAssistantAttendance(admin, caller, payload) {
+    const requestStartedAt = performance.now();
+    const requestId = crypto.randomUUID();
+    const trace = (stage, extra = {}) => console.log('[ASSISTANT_ATTENDANCE]', JSON.stringify({ requestId, stage, elapsedMs: Math.round(performance.now() - requestStartedAt), timestamp: new Date().toISOString(), ...extra }));
+    trace('started');
     const qrPayload = payload?.value;
     if (typeof qrPayload !== 'string' || !qrPayload.trim() || qrPayload.length > 4096) return errorResponse('El código QR no es válido.');
     const assistants = caller.memberships.filter((m) => m.role === 'ASSISTANT');
     if (!assistants.length) return errorResponse('Esta acción está disponible únicamente para auxiliares.', 403);
     for (const membership of assistants) {
+        const findStartedAt = performance.now();
         const student = await findStudent(admin, membership.institution_id, qrPayload);
+        trace('student_lookup', { durationMs: Math.round(performance.now() - findStartedAt), found: Boolean(student) });
         if (!student) continue;
+        const enrollmentStartedAt = performance.now();
         const { data: enrollments, error: enrollmentError } = await admin.from('enrollments').select('id,classroom_id')
             .eq('institution_id', membership.institution_id).eq('student_id', student.id).eq('status', 'ACTIVE');
         if (enrollmentError) return errorResponse('No se pudo validar la matrícula del alumno.', 500);
+        trace('enrollments_lookup', { durationMs: Math.round(performance.now() - enrollmentStartedAt), count: enrollments?.length || 0 });
         if (!enrollments?.length) return errorResponse('El alumno no tiene una matrícula activa.', 409);
         const classroomIds = [...new Set(enrollments.map((e) => e.classroom_id))];
+        const classroomStartedAt = performance.now();
         const { data: classrooms, error: classroomError } = await admin.from('classrooms').select('id,level,status')
             .eq('institution_id', membership.institution_id).in('id', classroomIds).eq('status', 'ACTIVE');
+        trace('classrooms_lookup', { durationMs: Math.round(performance.now() - classroomStartedAt), count: classrooms?.length || 0 });
         if (classroomError) return errorResponse('No se pudo validar el aula del alumno.', 500);
         const enrollment = enrollments.find((e) => classrooms?.some((c) => c.id === e.classroom_id));
         const classroom = classrooms?.find((c) => c.id === enrollment?.classroom_id);
         if (!enrollment || !classroom) return errorResponse('El alumno no tiene un aula activa.', 409);
+        const institutionStartedAt = performance.now();
         const { data: institution, error: institutionError } = await admin.from('institutions')
             .select('timezone,attendance_settings').eq('id', membership.institution_id).eq('status', 'ACTIVE').maybeSingle();
+        trace('institution_settings', { durationMs: Math.round(performance.now() - institutionStartedAt) });
         if (institutionError || !institution) return errorResponse('No se pudo consultar la configuración institucional.', 500);
         const schedule = institution.attendance_settings?.by_level?.[classroom.level] || institution.attendance_settings?.global;
         if (!schedule) return errorResponse(`La asistencia todavía no está configurada para el nivel ${classroom.level}.`, 409);
@@ -318,11 +330,14 @@ async function handleAssistantAttendance(admin, caller, payload) {
         if (!status) return errorResponse('La configuración de horarios de este nivel está incompleta.', 409);
         const key = `assistant_qr_entry:${student.id}:${date}`;
         const fields = 'id,attendance_status,attendance_local_date,occurred_at,justification_status,justification_notes';
+        const existingStartedAt = performance.now();
         const { data: existing, error: lookupError } = await admin.from('attendance_events').select(fields)
             .eq('institution_id', membership.institution_id).eq('idempotency_key', key).maybeSingle();
+        trace('idempotency_lookup', { durationMs: Math.round(performance.now() - existingStartedAt), exists: Boolean(existing) });
         if (lookupError) return errorResponse('No se pudo comprobar si el alumno ya registró su asistencia.', 500);
         const studentData = { id: student.id, name: [student.first_names, student.last_names].filter(Boolean).join(' '), code: student.student_code };
-        if (existing) return json({ alreadyRecorded: true, event: existing, student: studentData });
+        if (existing) { trace('completed', { result: 'already_recorded' }); return json({ alreadyRecorded: true, event: existing, student: studentData }); }
+        const insertStartedAt = performance.now();
         const { data: event, error: insertError } = await admin.from('attendance_events').insert({
             institution_id: membership.institution_id, student_id: student.id, enrollment_id: enrollment.id,
             event_type: 'ENTRY', occurred_at: now.toISOString(), source: 'QR',
@@ -335,7 +350,9 @@ async function handleAssistantAttendance(admin, caller, payload) {
                 .eq('institution_id', membership.institution_id).eq('idempotency_key', key).maybeSingle();
             if (duplicate) return json({ alreadyRecorded: true, event: duplicate, student: studentData });
         }
+        trace('attendance_insert', { durationMs: Math.round(performance.now() - insertStartedAt), success: !insertError });
         if (insertError) { console.error('Assistant attendance insert failed.', insertError.message); return errorResponse('No se pudo registrar la asistencia.', 500); }
+        trace('completed', { result: 'created' });
         return json({ alreadyRecorded: false, event, student: studentData }, 201);
     }
     return errorResponse('No encontramos un alumno activo de esta institución con ese código QR.', 404);
