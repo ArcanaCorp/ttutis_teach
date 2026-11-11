@@ -73,11 +73,11 @@ export default function ClassDetail() {
         } finally {
             setLoadingAnnouncements(false);
         }
-    }, [detail?.classroomId]);
+    }, [detail]);
 
     useEffect(() => {
-        if (tab === 'announcements' && detail?.classroomId) loadAnnouncements();
-    }, [tab, detail?.classroomId, loadAnnouncements]);
+        if (tab === 'announcements' && detail?.classroomId) Promise.resolve().then(loadAnnouncements);
+    }, [tab, detail, loadAnnouncements]);
 
     const students = useMemo(() => detail?.students || [], [detail]);
     const filteredStudents = useMemo(() => {
@@ -152,6 +152,7 @@ export default function ClassDetail() {
                             pathname: '/student/[id]',
                             params: {
                                 id: student.id,
+                                enrollmentId: student.enrollmentId || '',
                                 scheduleId: String(id),
                                 classroomId: detail.classroomId,
                                 academicYearId: detail.academicYearId,
