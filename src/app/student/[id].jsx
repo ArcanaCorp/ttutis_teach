@@ -123,9 +123,7 @@ export default function StudentDetail() {
                     <InfoRow icon={CalendarDays} label="Fecha de ingreso" value={dateLabel(student.admission_date)} />
 
                     <TextApp size="md" variant="semibold">Apoderados vinculados</TextApp>
-                    {student.guardians.length ? student.guardians.map((guardian, index) => (
-                        <View key={index} style={styles.historyRow}><TextApp size="sm" variant="medium">{guardian.name}</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>{guardian.relationship}</TextApp></View>
-                    )) : <TextApp size="sm" color={theme.colors.text.tertiary}>No hay apoderados vinculados.</TextApp>}
+                    <TextApp size="sm" color={theme.colors.text.tertiary}>La información de apoderados está protegida por permisos institucionales y no se muestra en esta ficha.</TextApp>
 
                     <TextApp size="md" variant="semibold">Últimas observaciones y comunicaciones</TextApp>
                     {student.updates.length ? student.updates.map((item) => (
