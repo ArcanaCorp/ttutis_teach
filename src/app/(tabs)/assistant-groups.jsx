@@ -27,7 +27,10 @@ export default function AssistantGroups() {
         catch (e) { setError(e.message || 'No se pudieron cargar tus grupos.'); }
     }, [staff?.institutionId, staff?.membershipId]);
     useEffect(() => { let active = true; load().finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [load]);
-    const filtered = useMemo(() => groups.map((group) => ({ ...group, students: group.students.filter((student) => normalize([student.name, student.code].join(' ')).includes(normalize(search))) })).filter((group) => !search || group.students.length || normalize(group.label).includes(normalize(search))), [groups, search]);
+    const filtered = useMemo(() => groups.map((group) => {
+        const groupMatches = normalize(group.label).includes(normalize(search));
+        return { ...group, students: !search || groupMatches ? group.students : group.students.filter((student) => normalize([student.name, student.code].join(' ')).includes(normalize(search))) };
+    }).filter((group) => !search || group.students.length || normalize(group.label).includes(normalize(search))), [groups, search]);
     async function refresh() { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } }
     function openStudent(student, group) {
         router.push({ pathname: '/student/[id]', params: { id: student.id, classroomId: group.classroomId, enrollmentId: student.enrollmentId, academicYearId: group.academicYearId, classroomName: group.label, assistantMode: 'true' } });
