@@ -6,6 +6,7 @@ import Screen from '../../components/ui/Screen';
 import TextApp from '../../components/ui/TextApp';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import SelectField from '../../components/ui/SelectField';
 import { useAuth } from '../../context/AuthContext';
 import { getAssistantStudents, getAssistantReports, createAssistantReport } from '../../services/assistantServices';
 import { theme } from '../../constants/theme';
@@ -51,6 +52,7 @@ export default function AssistantReports() {
     const [saving, setSaving] = useState(false);
     const [search, setSearch] = useState('');
     const [recipientSearch, setRecipientSearch] = useState('');
+    const [recipientClassroomId, setRecipientClassroomId] = useState('ALL');
     const [targetType, setTargetType] = useState('STUDENTS');
     const [selectedStudentIds, setSelectedStudentIds] = useState([]);
     const [classroomId, setClassroomId] = useState('');
@@ -103,9 +105,19 @@ export default function AssistantReports() {
         });
         return [...groups.values()];
     }, [filteredReports]);
-    const visibleStudents = useMemo(() => students.filter((student) =>
-        normalize([student.full_name, student.student_code, student.classroom_name].join(' ')).includes(normalize(recipientSearch))
-    ), [students, recipientSearch]);
+    const visibleStudents = useMemo(() => {
+        const query = normalize(recipientSearch.trim());
+        if (query.length < 2) return [];
+        return students.filter((student) => {
+            const matchesSearch = normalize([student.full_name, student.student_code, student.classroom_name].join(' ')).includes(query);
+            const matchesClassroom = recipientClassroomId === 'ALL' || student.classroom_id === recipientClassroomId;
+            return matchesSearch && matchesClassroom;
+        }).slice(0, 30);
+    }, [students, recipientSearch, recipientClassroomId]);
+    const classroomOptions = useMemo(() => [
+        { value: 'ALL', label: 'Todos los salones' },
+        ...classrooms.map((item) => ({ value: item.id, label: [item.label, item.level].filter(Boolean).join(' · ') })),
+    ], [classrooms]);
 
     async function refresh() { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } }
     function toggleStudent(id) {
@@ -114,6 +126,7 @@ export default function AssistantReports() {
     function resetForm() {
         setTitle(''); setBody(''); setPriority('NORMAL'); setUpdateType('REPORT');
         setSelectedStudentIds([]); setClassroomId(''); setTargetType('STUDENTS');
+        setRecipientSearch(''); setRecipientClassroomId('ALL');
     }
     async function save() {
         if (!title.trim() || !body.trim()) { Alert.alert('Completa la comunicación', 'Agrega un título y el detalle.'); return; }
@@ -170,49 +183,63 @@ export default function AssistantReports() {
                             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={s.modalScroll}>
                 <View style={s.formHeader}><Pressable onPress={() => { setShowForm(false); resetForm(); }}><X size={22} color={theme.colors.text.primary} /></Pressable><TextApp size="lg" variant="semibold">Nueva comunicación</TextApp></View>
                 <View style={s.form}>
-                    <TextApp size="sm" variant="semibold">Tipo de comunicación</TextApp>
-                    <View style={s.typeGrid}>
-                        {types.map((item) => <Pressable key={item.value} onPress={() => setUpdateType(item.value)} style={[s.typeChoice, updateType === item.value && s.choiceActive]}>
-                            <TextApp size="sm" variant="semibold">{item.label}</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>{item.description}</TextApp>
-                        </Pressable>)}
+                    <View style={s.compactRow}>
+                        <View style={{ flex: 1 }}>
+                            <SelectField label="Tipo de comunicación" value={updateType} onChange={setUpdateType} options={types.map((item) => ({ value: item.value, label: item.label + ' · ' + item.description }))} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <SelectField label="Prioridad" value={priority} onChange={setPriority} options={priorities} />
+                        </View>
                     </View>
-                    <TextApp size="sm" variant="semibold">¿A quién va dirigido?</TextApp>
-                    <View style={s.targetRow}>
-                        {targets.map((item) => {
-                            const Icon = item.icon;
-                            return <Pressable key={item.value} onPress={() => setTargetType(item.value)} style={[s.targetChoice, targetType === item.value && s.choiceActive]}>
-                                <Icon size={17} color={theme.colors.primary[700]} /><TextApp size="xs" variant={targetType === item.value ? 'semibold' : 'regular'}>{item.label}</TextApp>
-                            </Pressable>;
-                        })}
-                    </View>
+                    <SelectField
+                        label="Destinatarios"
+                        value={targetType}
+                        onChange={(value) => { setTargetType(value); setSelectedStudentIds([]); setClassroomId(''); }}
+                        options={[
+                            { value: 'STUDENTS', label: 'Uno o varios alumnos' },
+                            { value: 'CLASSROOM', label: 'Un salón completo' },
+                            { value: 'INSTITUTION', label: 'Toda la institución' },
+                        ]}
+                    />
                     {targetType === 'STUDENTS' && <>
-                        <View style={s.recipientHeading}><TextApp size="sm" variant="semibold">Seleccionar alumnos</TextApp><TextApp size="xs" color={theme.colors.primary[700]}>{selectedStudentIds.length} seleccionados</TextApp></View>
-                        <Input type="search" value={recipientSearch} onChangeText={setRecipientSearch} placeholder="Buscar alumno por nombre o código" />
-                        <View style={s.recipientList}>
+                        <View style={s.recipientHeading}>
+                            <TextApp size="sm" variant="semibold">Buscar destinatarios</TextApp>
+                            <TextApp size="xs" color={theme.colors.primary[700]}>{selectedStudentIds.length} seleccionados</TextApp>
+                        </View>
+                        <Input size="sm" type="search" value={recipientSearch} onChangeText={setRecipientSearch} placeholder="Escribe al menos 2 letras o código" />
+                        <SelectField label="Filtrar por salón" value={recipientClassroomId} onChange={setRecipientClassroomId} options={classroomOptions} />
+                        {!!selectedStudentIds.length && <View style={s.selectedSummary}>
+                            <TextApp size="xs" color={theme.colors.text.secondary}>
+                                Seleccionados: {students.filter((student) => selectedStudentIds.includes(student.id)).map((student) => student.full_name).join(', ')}
+                            </TextApp>
+                            <Pressable onPress={() => setSelectedStudentIds([])}><TextApp size="xs" color={theme.colors.state.error}>Limpiar</TextApp></Pressable>
+                        </View>}
+                        {recipientSearch.trim().length >= 2 ? <View style={s.recipientList}>
                             {visibleStudents.map((student) => {
                                 const checked = selectedStudentIds.includes(student.id);
                                 return <Pressable key={student.id} onPress={() => toggleStudent(student.id)} style={s.recipientRow}>
-                                    <View style={[s.check, checked && s.checkActive]}>{checked && <Check size={13} color="#fff" />}</View>
-                                    <View style={{ flex: 1, gap: 2 }}><TextApp size="sm" variant="medium">{student.full_name}</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>{student.student_code || 'Sin código'} · {student.classroom_name || 'Sin salón'}</TextApp></View>
+                                    <View style={[s.check, checked && s.checkActive]}>{checked && <Check size={12} color="#fff" />}</View>
+                                    <View style={{ flex: 1, gap: 1 }}>
+                                        <TextApp size="sm" variant="medium">{student.full_name}</TextApp>
+                                        <TextApp size="xs" color={theme.colors.text.secondary}>{student.student_code || 'Sin código'} · {student.classroom_name || 'Sin salón'}</TextApp>
+                                    </View>
                                 </Pressable>;
                             })}
-                            {!visibleStudents.length && <TextApp size="xs" color={theme.colors.text.secondary}>No hay alumnos que coincidan con la búsqueda.</TextApp>}
-                        </View>
-                        <Button size="sm" variant="ghost" onPress={() => setSelectedStudentIds(visibleStudents.map((item) => item.id))}>Seleccionar todos los visibles</Button>
+                            {!visibleStudents.length && <TextApp size="xs" color={theme.colors.text.secondary}>No hay coincidencias con ese nombre, código y salón.</TextApp>}
+                        </View> : <TextApp size="xs" color={theme.colors.text.tertiary}>La lista no se carga completa. Busca por nombre, apellido o código y selecciona los resultados.</TextApp>}
                     </>}
                     {targetType === 'CLASSROOM' && <>
-                        <TextApp size="sm" variant="semibold">Salón destinatario</TextApp>
-                        <View style={s.pickerList}>
-                            {classrooms.map((classroom) => <Pressable key={classroom.id} onPress={() => setClassroomId(classroom.id)} style={[s.choice, classroomId === classroom.id && s.choiceActive]}>
-                                <TextApp size="sm" variant={classroomId === classroom.id ? 'semibold' : 'regular'}>{classroom.label} · {classroom.level}</TextApp>
-                            </Pressable>)}
-                        </View>
+                        <SelectField
+                            label="Salón destinatario"
+                            value={classroomId}
+                            onChange={setClassroomId}
+                            placeholder="Seleccionar salón"
+                            options={classrooms.map((item) => ({ value: item.id, label: [item.label, item.level].filter(Boolean).join(' · ') }))}
+                        />
                     </>}
                     {targetType === 'INSTITUTION' && <View style={s.institutionNote}><Megaphone size={18} color={theme.colors.primary[700]} /><TextApp size="xs" color={theme.colors.text.secondary}>Se registrará para toda la institución. Los anuncios institucionales quedarán como un único aviso general; los demás tipos se registrarán para cada alumno activo.</TextApp></View>}
                     <Input label="Título" value={title} onChangeText={setTitle} placeholder="Ej. Citación a reunión de padres" maxLength={120} />
                     <Input label="Detalle" value={body} onChangeText={setBody} type="multiline" multiline numberOfLines={5} placeholder="Describe claramente el motivo, fecha, indicaciones y cualquier detalle importante." maxLength={3000} />
-                    <TextApp size="sm" variant="semibold">Prioridad</TextApp>
-                    <View style={s.priorityRow}>{priorities.map((item) => <Pressable key={item.value} onPress={() => setPriority(item.value)} style={[s.priority, priority === item.value && s.choiceActive]}><TextApp size="xs" variant={priority === item.value ? 'semibold' : 'regular'}>{item.label}</TextApp></Pressable>)}</View>
                     <Button loading={saving} disabled={saving || !students.length} onPress={save} fullWidth>Guardar comunicación</Button>
                     <TextApp size="xs" color={theme.colors.text.tertiary}>Este registro no dispara SMS, correo ni notificaciones push automáticamente.</TextApp>
                 </View>
@@ -236,26 +263,24 @@ const s=StyleSheet.create({
     meta:{flexDirection:'row',flexWrap:'wrap',gap:7,alignItems:'center'},
     empty:{margin:8,padding:26,borderRadius:18,backgroundColor:'#fff',alignItems:'center',gap:10,borderWidth:1,borderColor:theme.colors.border.subtle},
     formHeader:{marginHorizontal:20,marginTop:8,marginBottom:12,flexDirection:'row',alignItems:'center',gap:14},
-    form:{marginHorizontal:16,marginBottom:18,padding:16,borderRadius:18,backgroundColor:'#fff',borderWidth:1,borderColor:theme.colors.border.subtle,gap:13},
+    form:{marginHorizontal:12,marginBottom:12,padding:13,borderRadius:16,backgroundColor:'#fff',borderWidth:1,borderColor:theme.colors.border.subtle,gap:9},
+    compactRow:{flexDirection:'row',gap:9},
+    selectedSummary:{padding:9,borderRadius:10,backgroundColor:theme.colors.background.muted,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
     modalOverlay:{flex:1,backgroundColor:'rgba(15,23,42,0.48)',justifyContent:'flex-end'},
-    modalKeyboard:{width:'100%',maxHeight:'94%'},
+    modalKeyboard:{width:'100%',maxHeight:'88%'},
     modalCard:{maxHeight:'100%',backgroundColor:'#fafafa',borderTopLeftRadius:26,borderTopRightRadius:26,paddingTop:10,overflow:'hidden'},
     modalHandle:{alignSelf:'center',width:42,height:5,borderRadius:5,backgroundColor:'#cbd5e1',marginBottom:8},
     modalScroll:{paddingBottom:Platform.OS === 'ios' ? 34 : 20},
-    typeGrid:{flexDirection:'row',flexWrap:'wrap',gap:7},
-    typeChoice:{width:'48%',padding:11,borderRadius:12,borderWidth:1,borderColor:theme.colors.border.subtle,backgroundColor:'#fff',gap:3},
     choice:{padding:12,borderRadius:12,borderWidth:1,borderColor:theme.colors.border.subtle,backgroundColor:'#fff'},
     choiceActive:{borderColor:theme.colors.primary[600],backgroundColor:theme.colors.primary[50]},
     targetRow:{flexDirection:'row',gap:7},
     targetChoice:{flex:1,minHeight:58,padding:8,borderRadius:12,borderWidth:1,borderColor:theme.colors.border.subtle,alignItems:'center',justifyContent:'center',gap:5},
     recipientHeading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
-    recipientList:{maxHeight:280,gap:2},
+    recipientList:{maxHeight:150,gap:1,borderWidth:1,borderColor:theme.colors.border.subtle,borderRadius:10,overflow:'hidden'},
     recipientRow:{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:9,borderBottomWidth:1,borderBottomColor:theme.colors.border.subtle},
     check:{width:22,height:22,borderRadius:6,borderWidth:1.5,borderColor:theme.colors.border.DEFAULT,alignItems:'center',justifyContent:'center'},
     checkActive:{backgroundColor:theme.colors.primary[700],borderColor:theme.colors.primary[700]},
     pickerList:{gap:7},
     institutionNote:{padding:12,borderRadius:12,backgroundColor:theme.colors.primary[50],flexDirection:'row',gap:9,alignItems:'center'},
-    priorityRow:{flexDirection:'row',flexWrap:'wrap',gap:7},
-    priority:{paddingHorizontal:13,paddingVertical:10,borderRadius:20,borderWidth:1,borderColor:theme.colors.border.subtle},
     error:{margin:20,padding:14,backgroundColor:'#fff',borderRadius:14,gap:10},
 });
