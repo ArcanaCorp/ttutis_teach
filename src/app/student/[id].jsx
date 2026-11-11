@@ -112,7 +112,7 @@ export default function StudentDetail() {
                         <View style={styles.actions}>
                             <Pressable style={styles.action} onPress={openAssistantReport} accessibilityRole="button">
                                 <Flag size={19} color={theme.colors.primary[800]} />
-                                <TextApp size="xs" variant="semibold">Crear reporte</TextApp>
+                                <TextApp size="xs" variant="semibold">Crear comunicación</TextApp>
                             </Pressable>
                         </View>
                     ) : (
