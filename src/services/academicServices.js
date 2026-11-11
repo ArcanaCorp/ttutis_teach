@@ -10,7 +10,10 @@ function displayStudent(row) {
         id: row.student_id || student?.id,
         enrollmentId: row.id,
         name: [student?.first_names, student?.last_names].filter(Boolean).join(' ') || 'Alumno',
+        firstNames: student?.first_names || '',
+        lastNames: student?.last_names || '',
         code: student?.student_code || '',
+        status: student?.status || '',
     };
 }
 
@@ -77,6 +80,51 @@ async function getModernScheduleDetail(scheduleId, institutionId) {
         academicYearId: schedule.academic_year_id,
         courseAssignmentId: offering?.id || null,
         students,
+    };
+}
+
+
+export async function getStudentDetail(studentId, institutionId, classroomId) {
+    if (!supabase || !studentId || !institutionId || !classroomId) return null;
+    const { data: enrollment, error: enrollmentError } = await supabase.from('enrollments')
+        .select('id,academic_year_id,classroom_id,enrolled_at,status,classrooms(grade_label,section_name),academic_years(name)')
+        .eq('institution_id', institutionId).eq('student_id', studentId)
+        .eq('classroom_id', classroomId).eq('status', 'ACTIVE').maybeSingle();
+    if (enrollmentError || !enrollment) return null;
+
+    const { data: student, error: studentError } = await supabase.from('students')
+        .select('id,institution_id,first_names,last_names,document_type,document_number,birth_date,phone,email,student_code,admission_date,status,membership_id')
+        .eq('institution_id', institutionId).eq('id', studentId).maybeSingle();
+    if (studentError || !student) return null;
+
+    const [guardiansResult, updatesResult, attendanceResult] = await Promise.all([
+        supabase.from('guardian_student_links')
+            .select('relationship,profiles(display_name)')
+            .eq('institution_id', institutionId).eq('student_id', studentId).eq('status', 'ACTIVE'),
+        supabase.from('student_updates')
+            .select('id,update_type,title,body,priority,created_at')
+            .eq('institution_id', institutionId).eq('student_id', studentId)
+            .order('created_at', { ascending: false }).limit(30),
+        supabase.from('attendance_events')
+            .select('id,event_type,occurred_at,notes')
+            .eq('institution_id', institutionId).eq('student_id', studentId)
+            .order('occurred_at', { ascending: false }).limit(30),
+    ]);
+    const classroom = first(enrollment.classrooms);
+    const academicYear = first(enrollment.academic_years);
+    return {
+        ...student,
+        fullName: [student.first_names, student.last_names].filter(Boolean).join(' '),
+        classroomName: [classroom?.grade_label, classroom?.section_name].filter(Boolean).join(' '),
+        academicYearName: academicYear?.name || '',
+        enrolledAt: enrollment.enrolled_at,
+        guardians: (guardiansResult.data || []).map((item) => ({
+            name: first(item.profiles)?.display_name || 'Familiar',
+            relationship: item.relationship || 'Familiar',
+        })),
+        updates: updatesResult.data || [],
+        attendance: attendanceResult.data || [],
+        historyError: updatesResult.error?.message || attendanceResult.error?.message || '',
     };
 }
 
