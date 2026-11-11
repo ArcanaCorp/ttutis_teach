@@ -36,10 +36,10 @@ async function functionErrorMessage(error, fallback) {
     return fallback;
 }
 
-export async function getClassAnnouncements(classroomId, course = {}) {
+export async function getClassAnnouncements(classroomId) {
     if (!supabase) throw new Error('La conexión con TTUTIS no está disponible.');
     const { data, error } = await supabase.functions.invoke('teacher-tools', {
-        body: { action: 'list_announcements', classroomId, ...course },
+        body: { action: 'list_announcements', classroomId },
     });
     if (error) throw new Error(await functionErrorMessage(error, 'No se pudieron cargar los anuncios de este curso.'));
     return data?.data || [];
