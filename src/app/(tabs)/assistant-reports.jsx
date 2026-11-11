@@ -89,7 +89,7 @@ export default function AssistantReports() {
                     <Input label="Detalle" value={body} onChangeText={setBody} type="multiline" multiline numberOfLines={5} placeholder="Describe lo ocurrido de forma clara y objetiva." maxLength={3000} />
                     <TextApp size="sm" variant="semibold">Prioridad</TextApp>
                     <View style={s.priorityRow}>{priorities.map((p) => <Pressable key={p.value} onPress={() => setPriority(p.value)} style={[s.priority, priority === p.value && s.choiceActive]}><TextApp size="xs" variant={priority === p.value ? 'semibold' : 'regular'}>{p.label}</TextApp></Pressable>)}</View>
-                    <Button loading={saving} disabled={!groups.length || saving} onPress={save} block>Guardar reporte</Button>
+                    <Button loading={saving} disabled={!groups.length || saving} onPress={save} fullWidth>Guardar reporte</Button>
                 </View>
             </>}
         </>}
