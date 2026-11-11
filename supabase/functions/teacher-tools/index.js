@@ -277,50 +277,79 @@ async function assistantMembership(caller, payload) {
     return caller.memberships.find((item) => item.role === 'ASSISTANT' && item.id === membershipId) || null;
 }
 
+async function fetchAllRows(queryFactory, pageSize = 1000) {
+    const rows = [];
+    for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await queryFactory().range(offset, offset + pageSize - 1);
+        if (error) return { data: null, error };
+        rows.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+    }
+    return { data: rows, error: null };
+}
+
 async function handleAssistantStudents(admin, caller, payload) {
     const membership = await assistantMembership(caller, payload);
     if (!membership) return errorResponse('No tienes una sesión auxiliar activa para esta institución.', 403);
-    const { data: enrollments, error: enrollmentError } = await admin.from('enrollments')
-        .select('id,student_id,classroom_id,academic_year_id')
-        .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').limit(5000);
-    if (enrollmentError) return errorResponse('No se pudieron consultar las matrículas institucionales.', 500);
-    const studentIds = [...new Set((enrollments || []).map((item) => item.student_id))];
-    const classroomIds = [...new Set((enrollments || []).map((item) => item.classroom_id))];
-    if (!studentIds.length || !classroomIds.length) return json({ students: [], classrooms: [] });
-    const [{ data: students, error: studentsError }, { data: classrooms, error: classroomsError }] = await Promise.all([
-        admin.from('students').select('id,first_names,last_names,student_code,status')
-            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', studentIds),
-        admin.from('classrooms').select('id,academic_year_id,level,grade_label,section_name,status')
-            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', classroomIds),
+
+    // Paginate independently: large ID filters exceed PostgREST URL limits.
+    const [{ data: students, error: studentsError }, { data: enrollments, error: enrollmentError }, { data: classrooms, error: classroomsError }] = await Promise.all([
+        fetchAllRows(() => admin.from('students')
+            .select('id,first_names,last_names,student_code,status')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').order('id')),
+        fetchAllRows(() => admin.from('enrollments')
+            .select('id,student_id,classroom_id,academic_year_id')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').order('id')),
+        fetchAllRows(() => admin.from('classrooms')
+            .select('id,academic_year_id,level,grade_label,section_name,status')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').order('id')),
     ]);
-    if (studentsError || classroomsError) return errorResponse('No se pudo completar la lista institucional de alumnos.', 500);
-    const studentMap = new Map((students || []).map((item) => [item.id, item]));
+    if (studentsError) {
+        console.error('Assistant students query failed.', studentsError.message);
+        return errorResponse('No se pudieron consultar los alumnos activos de la institución.', 500);
+    }
+    if (enrollmentError) {
+        console.error('Assistant enrollments query failed.', enrollmentError.message);
+        return errorResponse('No se pudieron consultar las matrículas institucionales.', 500);
+    }
+    if (classroomsError) {
+        console.error('Assistant classrooms query failed.', classroomsError.message);
+        return errorResponse('No se pudieron consultar los salones institucionales.', 500);
+    }
+
     const classroomMap = new Map((classrooms || []).map((item) => [item.id, item]));
-    const unique = new Map();
+    const enrollmentByStudent = new Map();
     for (const enrollment of enrollments || []) {
-        const student = studentMap.get(enrollment.student_id);
-        const classroom = classroomMap.get(enrollment.classroom_id);
-        if (!student || !classroom || unique.has(student.id)) continue;
-        unique.set(student.id, {
+        if (classroomMap.has(enrollment.classroom_id) && !enrollmentByStudent.has(enrollment.student_id)) {
+            enrollmentByStudent.set(enrollment.student_id, enrollment);
+        }
+    }
+    const studentRows = (students || []).map((student) => {
+        const enrollment = enrollmentByStudent.get(student.id);
+        const classroom = enrollment ? classroomMap.get(enrollment.classroom_id) : null;
+        return {
             id: student.id,
             first_names: student.first_names,
             last_names: student.last_names,
             full_name: [student.first_names, student.last_names].filter(Boolean).join(' '),
             student_code: student.student_code || '',
-            enrollment_id: enrollment.id,
-            classroom_id: classroom.id,
-            classroom_name: [classroom.grade_label, classroom.section_name].filter(Boolean).join(' '),
-            level: classroom.level,
-            grade_label: classroom.grade_label,
-            section_name: classroom.section_name,
-            academic_year_id: enrollment.academic_year_id,
-        });
-    }
+            enrollment_id: enrollment?.id || null,
+            classroom_id: classroom?.id || null,
+            classroom_name: classroom ? [classroom.grade_label, classroom.section_name].filter(Boolean).join(' ') : 'Sin salón asignado',
+            level: classroom?.level || '',
+            grade_label: classroom?.grade_label || '',
+            section_name: classroom?.section_name || '',
+            academic_year_id: enrollment?.academic_year_id || classroom?.academic_year_id || null,
+        };
+    });
     const classroomRows = (classrooms || []).map((item) => ({
         id: item.id, level: item.level, grade_label: item.grade_label, section_name: item.section_name,
         label: [item.grade_label, item.section_name].filter(Boolean).join(' '),
     })).sort((a, b) => a.label.localeCompare(b.label, 'es'));
-    return json({ students: [...unique.values()].sort((a, b) => a.full_name.localeCompare(b.full_name, 'es')), classrooms: classroomRows });
+    return json({
+        students: studentRows.sort((a, b) => a.full_name.localeCompare(b.full_name, 'es')),
+        classrooms: classroomRows,
+    });
 }
 
 async function handleAssistantReports(admin, caller, payload) {
