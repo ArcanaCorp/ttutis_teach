@@ -14,13 +14,9 @@ const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 
 export default function Schedule() {
     const { session, staff, staffLoading } = useAuth();
-    const userId = session?.user?.id;
-    const staffRole = staff?.role;
-    const institutionId = staff?.institutionId;
-    const membershipId = staff?.membershipId;
-    const load = useCallback(() => staffRole === 'TEACHER' && institutionId
-        ? getTeacherSchedule({ userId, institutionId, membershipId })
-        : Promise.resolve([]), [userId, staffRole, institutionId, membershipId]);
+    const load = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
+        ? getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
+        : Promise.resolve([]), [session, staff]);
     const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
     const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, load, 15 * 60 * 1000, !staffLoading);
     const schedule = data || [];
