@@ -155,7 +155,6 @@ export default function ClassDetail() {
                                 classroomId: detail.classroomId,
                                 academicYearId: detail.academicYearId,
                                 classroomName: detail.section,
-                                scheduleId: String(id),
                                 isTutor: String(Boolean(detail.isTutor)),
                                 studentName: student.name,
                                 studentCode: student.code || '',
