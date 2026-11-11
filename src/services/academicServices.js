@@ -103,10 +103,7 @@ export async function getStudentDetail(studentId, institutionId, classroomId) {
         .eq('institution_id', institutionId).eq('id', studentId).maybeSingle();
     if (studentError || !student) return null;
 
-    const [guardiansResult, updatesResult, attendanceResult] = await Promise.all([
-        supabase.from('guardian_student_links')
-            .select('relationship,profiles(display_name)')
-            .eq('institution_id', institutionId).eq('student_id', studentId).eq('status', 'ACTIVE'),
+    const [updatesResult, attendanceResult] = await Promise.all([
         supabase.from('student_updates')
             .select('id,update_type,title,body,priority,created_at')
             .eq('institution_id', institutionId).eq('student_id', studentId)
@@ -125,10 +122,7 @@ export async function getStudentDetail(studentId, institutionId, classroomId) {
         classroomName: [classroom?.grade_label, classroom?.section_name].filter(Boolean).join(' '),
         academicYearName: academicYear?.name || '',
         enrolledAt: enrollment.enrolled_at,
-        guardians: (guardiansResult.data || []).map((item) => ({
-            name: first(item.profiles)?.display_name || 'Familiar',
-            relationship: item.relationship || 'Familiar',
-        })),
+        guardians: null,
         updates: updatesResult.data || [],
         attendance: attendanceResult.data || [],
         historyError: updatesResult.error?.message || attendanceResult.error?.message || '',
