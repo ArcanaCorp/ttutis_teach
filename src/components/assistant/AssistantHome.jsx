@@ -13,8 +13,8 @@ export default function AssistantHome() {
  const dateLabel = now.toLocaleDateString('es-PE',{weekday:'long',day:'numeric',month:'long'});
  const actions = [
   {title:'Registrar asistencia',subtitle:'Escanea el QR de cualquier alumno',icon:QrCode,path:'/(tabs)/qr'},
-  {title:'Mis grupos',subtitle:'Consulta los grupos asignados',icon:Users,path:'/(tabs)/assistant-groups'},
-  {title:'Crear reporte',subtitle:'Registra una incidencia o seguimiento',icon:FileText,path:'/(tabs)/assistant-reports'},
+  {title:'Supervisar alumnos',subtitle:'Consulta a todos los alumnos de la institución',icon:Users,path:'/(tabs)/assistant-groups'},
+  {title:'Reportes y comunicaciones',subtitle:'Envía citaciones, anuncios e incidencias',icon:FileText,path:'/(tabs)/assistant-reports'},
  ];
  return <Screen>
   <View style={s.header}><View style={{flex:1,gap:4}}><TextApp size="2xl" variant="bold">Hola, {staff?.displayName?.split(' ')[0] || 'Auxiliar'}</TextApp><TextApp size="sm" color={theme.colors.text.secondary}>{staff?.institutionName || 'Tu institución'}</TextApp></View><View style={s.role}><TextApp size="xs" variant="semibold">Auxiliar</TextApp></View></View>
@@ -23,7 +23,7 @@ export default function AssistantHome() {
    <View style={s.banner}><View style={s.bannerIcon}><Clock3 size={22} color={theme.colors.primary[800]}/></View><View style={{flex:1,gap:4}}><TextApp size="md" variant="semibold" color={theme.colors.primary[950]}>Control de asistencia</TextApp><TextApp size="sm" color={theme.colors.text.secondary}>Registra ingresos y revisa incidencias de la jornada.</TextApp></View></View>
    <TextApp size="lg" variant="bold">Accesos rápidos</TextApp>
    {actions.map((item)=>{const Icon=item.icon;return <Pressable key={item.title} style={s.action} onPress={()=>router.push(item.path)}><View style={s.actionIcon}><Icon size={21} color={theme.colors.primary[800]}/></View><View style={{flex:1,gap:3}}><TextApp size="md" variant="semibold">{item.title}</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>{item.subtitle}</TextApp></View><ChevronRight size={19} color={theme.colors.text.tertiary}/></Pressable>})}
-   <View style={s.note}><TextApp size="sm" variant="semibold">Asistencia institucional</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>El auxiliar puede registrar asistencia de alumnos activos de toda la institución. Los grupos asignados se usan únicamente para seguimiento.</TextApp></View>
+   <View style={s.note}><TextApp size="sm" variant="semibold">Asistencia institucional</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>El auxiliar puede registrar asistencia de alumnos activos de toda la institución. El auxiliar puede supervisar a todos los alumnos y dirigir comunicaciones a alumnos, salones o toda la institución.</TextApp></View>
   </View>
  </Screen>;
 }
