@@ -1,5 +1,28 @@
 import { supabase } from '../libs/supabase';
 
+async function invokeAttendance(action, body) {
+    if (!supabase) throw new Error('La conexión con TTUTIS no está disponible.');
+    const { data, error } = await supabase.functions.invoke('teacher-tools', { body: { action, ...body } });
+    if (error) {
+        let message = 'No se pudo completar la operación de asistencia.';
+        try {
+            const payload = await error.context?.json?.();
+            if (payload?.error) message = payload.error;
+        } catch { /* Keep the safe fallback. */ }
+        throw new Error(message);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+}
+
+export async function recordAssistantAttendance(value) {
+    return invokeAttendance('record_assistant_attendance', { value });
+}
+
+export async function justifyAssistantAbsence(eventId, reason) {
+    return invokeAttendance('justify_assistant_absence', { eventId, reason });
+}
+
 export async function resolveStudentQr(value) {
     if (!supabase) throw new Error('La conexión con TTUTIS no está disponible.');
     const { data, error } = await supabase.functions.invoke('teacher-tools', {
