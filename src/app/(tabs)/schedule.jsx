@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback } from 'react';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { CalendarDays, ChevronRight, GraduationCap, MapPin } from 'lucide-react-native';
 import { router } from 'expo-router';
 import Screen from '../../components/ui/Screen';
+import { ScheduleSkeleton } from '../../components/ui/Skeleton';
+import { useCachedQuery } from '../../hooks/useCachedQuery';
 import TextApp from '../../components/ui/TextApp';
 import { useAuth } from '../../context/AuthContext';
 import { getTeacherSchedule } from '../../services/staffServices';
@@ -12,35 +14,18 @@ const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 
 export default function Schedule() {
     const { session, staff } = useAuth();
-    const [schedule, setSchedule] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-
-    const load = useCallback(async () => {
-        return staff?.role === 'TEACHER' && staff.institutionId
-            ? await getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
-            : [];
-    }, [session, staff]);
-
-    useEffect(() => {
-        let active = true;
-        load().then((items) => { if (active) setSchedule(items); })
-            .catch(() => { if (active) setSchedule([]); })
-            .finally(() => { if (active) setLoading(false); });
-        return () => { active = false; };
-    }, [load]);
-
-    async function refresh() {
-        setRefreshing(true);
-        try { setSchedule(await load()); } finally { setRefreshing(false); }
-    }
-
+    const load = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
+        ? getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
+        : Promise.resolve([]), [session?.user?.id, staff?.role, staff?.institutionId, staff?.membershipId]);
+    const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
+    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, load, 5 * 60 * 1000);
+    const schedule = data || [];
     const grouped = days.map((label, index) => ({ label, classes: schedule.filter((item) => Number(item.weekday) === index + 1) })).filter((day) => day.classes.length);
 
     return (
         <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[theme.colors.primary[700]]} /> }>
             <View style={styles.header}><TextApp size="2xl" variant="bold">Mi horario</TextApp><TextApp size="sm" color={theme.colors.text.secondary}>Tus clases y aulas asignadas</TextApp></View>
-            {loading ? <ActivityIndicator color={theme.colors.primary[700]} style={{ padding: 28 }} /> : grouped.length ? grouped.map((day) => (
+            {loading && !data ? <ScheduleSkeleton count={4} /> : grouped.length ? grouped.map((day) => (
                 <View key={day.label} style={styles.dayGroup}>
                     <TextApp size="md" variant="semibold">{day.label}</TextApp>
                     {day.classes.map((item) => (

@@ -23,7 +23,6 @@ export default function TabsLayout() {
             <Tabs.Screen name="assessments" options={{ title: 'Evaluaciones', tabBarIcon: ({ color, size }) => <ClipboardList size={size} color={color} /> }} />
             <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: ({ color, size }) => <UserRound size={size} color={color} /> }} />
             <Tabs.Screen name="assessment/[id]" options={{ href: null }} />
-            <Tabs.Screen name="observation" options={{ href: null }} />
         </Tabs>
     );
 }
