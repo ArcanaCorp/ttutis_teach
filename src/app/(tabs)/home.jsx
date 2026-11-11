@@ -20,13 +20,9 @@ export default function Home() {
     const { session, staff, staffLoading } = useAuth();
     const today = useMemo(() => new Date(), []);
     const todayLabel = `${weekdayLabels[today.getDay()]}, ${today.toLocaleDateString('es-PE', { day: 'numeric', month: 'long' })}`;
-    const userId = session?.user?.id;
-    const staffRole = staff?.role;
-    const institutionId = staff?.institutionId;
-    const membershipId = staff?.membershipId;
-    const loadSchedule = useCallback(() => staffRole === 'TEACHER' && institutionId
-        ? getTeacherSchedule({ userId, institutionId, membershipId })
-        : Promise.resolve([]), [userId, staffRole, institutionId, membershipId]);
+    const loadSchedule = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
+        ? getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
+        : Promise.resolve([]), [session, staff]);
     const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
     const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, loadSchedule, 15 * 60 * 1000, !staffLoading);
     const schedule = data || [];
