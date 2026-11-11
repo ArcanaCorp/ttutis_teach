@@ -12,6 +12,7 @@ import { getAssistantStudents } from '../../services/assistantServices';
 import { theme } from '../../constants/theme';
 
 const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+const levelLabel = (value) => ({ INITIAL: 'Inicial', PRIMARY: 'Primaria', SECONDARY: 'Secundaria' }[String(value || '').toUpperCase()] || value || 'Sin nivel');
 
 export default function AssistantGroups() {
     const { staff } = useAuth();
@@ -57,11 +58,11 @@ export default function AssistantGroups() {
     }, [students, search, classroomFilter, levelFilter, hasStudentCriteria]);
     const classroomOptions = useMemo(() => [
         { value: 'ALL', label: 'Todos los salones' },
-        ...classrooms.map((item) => ({ value: item.id, label: [item.label, item.level].filter(Boolean).join(' · ') })),
+        ...classrooms.map((item) => ({ value: item.id, label: [item.label, levelLabel(item.level)].filter(Boolean).join(' · ') })),
     ], [classrooms]);
     const levelOptions = useMemo(() => [
         { value: 'ALL', label: 'Todos los niveles' },
-        ...levels.map((level) => ({ value: level, label: level })),
+        ...levels.map((level) => ({ value: level, label: levelLabel(level) })),
     ], [levels]);
 
     async function refresh() { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } }
