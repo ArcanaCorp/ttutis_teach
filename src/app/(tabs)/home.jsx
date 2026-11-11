@@ -1,10 +1,8 @@
-import { useCallback, useMemo } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { CalendarDays, ChevronRight, Clock3, GraduationCap, MapPin } from 'lucide-react-native';
 import { router } from 'expo-router';
 import Screen from '../../components/ui/Screen';
-import { ScheduleSkeleton } from '../../components/ui/Skeleton';
-import { useCachedQuery } from '../../hooks/useCachedQuery';
 import TextApp from '../../components/ui/TextApp';
 import { useAuth } from '../../context/AuthContext';
 import { getTeacherSchedule } from '../../services/staffServices';
@@ -18,15 +16,32 @@ function formatTime(value) {
 
 export default function Home() {
     const { session, staff } = useAuth();
+    const [schedule, setSchedule] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const today = useMemo(() => new Date(), []);
     const todayLabel = `${weekdayLabels[today.getDay()]}, ${today.toLocaleDateString('es-PE', { day: 'numeric', month: 'long' })}`;
-    const loadSchedule = useCallback(() => staff?.role === 'TEACHER' && staff.institutionId
-        ? getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId })
-        : Promise.resolve([]), [session?.user?.id, staff?.role, staff?.institutionId, staff?.membershipId]);
-    const cacheKey = `schedule:${session?.user?.id || 'guest'}:${staff?.institutionId || 'none'}`;
-    const { data, loading, refreshing, refresh } = useCachedQuery(cacheKey, loadSchedule, 5 * 60 * 1000);
-    const schedule = data || [];
     const todaysClasses = schedule.filter((item) => Number(item.weekday) === (today.getDay() || 7));
+
+    const loadSchedule = useCallback(async () => {
+        if (staff?.role === 'TEACHER' && staff.institutionId) {
+            return getTeacherSchedule({ userId: session?.user?.id, institutionId: staff.institutionId, membershipId: staff.membershipId });
+        }
+        return [];
+    }, [session, staff]);
+
+    useEffect(() => {
+        let active = true;
+        loadSchedule().then((data) => { if (active) setSchedule(data); })
+            .catch(() => { if (active) setSchedule([]); })
+            .finally(() => { if (active) setLoading(false); });
+        return () => { active = false; };
+    }, [loadSchedule]);
+
+    async function refresh() {
+        setRefreshing(true);
+        try { setSchedule(await loadSchedule()); } finally { setRefreshing(false); }
+    }
 
     const firstName = staff?.displayName?.split(' ')[0] || 'Hola';
     const roleName = staff?.role === 'ASSISTANT' ? 'Auxiliar' : staff?.role === 'TEACHER' ? 'Docente' : 'Equipo educativo';
@@ -59,7 +74,7 @@ export default function Home() {
                     </Pressable>
                 </View>
 
-                {loading && !data ? <ScheduleSkeleton count={2} /> : todaysClasses.length ? (
+                {loading ? <ActivityIndicator color={theme.colors.primary[700]} style={{ padding: 24 }} /> : todaysClasses.length ? (
                     <View style={styles.classList}>
                         {todaysClasses.map((item) => (
                             <View key={item.id} style={styles.classCard}>
