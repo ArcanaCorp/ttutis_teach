@@ -14,6 +14,8 @@ const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u03
 
 export default function AssistantGroups() {
     const { staff } = useAuth();
+    const institutionId = staff?.institutionId;
+    const membershipId = staff?.membershipId;
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -21,11 +23,11 @@ export default function AssistantGroups() {
     const [search, setSearch] = useState('');
     const [expanded, setExpanded] = useState({});
     const load = useCallback(async () => {
-        if (!staff?.institutionId || !staff?.membershipId) return;
+        if (!institutionId || !membershipId) return;
         setError('');
-        try { setGroups(await getAssistantGroups({ institutionId: staff.institutionId, membershipId: staff.membershipId })); }
+        try { setGroups(await getAssistantGroups({ institutionId, membershipId })); }
         catch (e) { setError(e.message || 'No se pudieron cargar tus grupos.'); }
-    }, [staff?.institutionId, staff?.membershipId]);
+    }, [institutionId, membershipId]);
     useEffect(() => { let active = true; load().finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [load]);
     const filtered = useMemo(() => groups.map((group) => {
         const groupMatches = normalize(group.label).includes(normalize(search));
