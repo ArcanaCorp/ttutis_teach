@@ -90,43 +90,64 @@ async function getModernScheduleDetail(scheduleId, institutionId) {
 }
 
 
-export async function getStudentDetail(studentId, institutionId, classroomId) {
-    if (!supabase || !studentId || !institutionId || !classroomId) return null;
-    const { data: enrollment, error: enrollmentError } = await supabase.from('enrollments')
-        .select('id,academic_year_id,classroom_id,enrolled_at,status,classrooms(grade_label,section_name),academic_years(name)')
-        .eq('institution_id', institutionId).eq('student_id', studentId)
-        .eq('classroom_id', classroomId).eq('status', 'ACTIVE').maybeSingle();
-    if (enrollmentError || !enrollment) return null;
+export async function getStudentDetail(studentId, institutionId, classroomId, enrollmentId) {
+    if (!supabase || !studentId || !institutionId) {
+        throw new Error('Faltan datos para consultar la ficha del alumno.');
+    }
+
+    let enrollmentQuery = supabase.from('enrollments')
+        .select('id,academic_year_id,classroom_id,enrolled_at,status')
+        .eq('institution_id', institutionId)
+        .eq('student_id', studentId)
+        .eq('status', 'ACTIVE');
+
+    enrollmentQuery = enrollmentId
+        ? enrollmentQuery.eq('id', enrollmentId)
+        : enrollmentQuery.eq('classroom_id', classroomId || '');
+
+    const { data: enrollment, error: enrollmentError } = await enrollmentQuery.maybeSingle();
+    if (enrollmentError) {
+        throw new Error(`No se pudo verificar la matrícula: ${enrollmentError.message}`);
+    }
+    if (!enrollment) {
+        throw new Error('No encontramos una matrícula activa de este alumno en el aula seleccionada.');
+    }
 
     const { data: student, error: studentError } = await supabase.from('students')
         .select('id,institution_id,first_names,last_names,document_type,document_number,birth_date,phone,email,student_code,admission_date,status,membership_id')
         .eq('institution_id', institutionId).eq('id', studentId).maybeSingle();
-    if (studentError || !student) return null;
+    if (studentError) {
+        throw new Error(`No se pudieron consultar los datos personales: ${studentError.message}`);
+    }
+    if (!student) throw new Error('No encontramos los datos personales de este alumno.');
 
-    const [updatesResult, attendanceResult] = await Promise.all([
-        supabase.from('student_updates')
-            .select('id,update_type,title,body,priority,created_at')
+    const [classroomResult, yearResult, updatesResult, attendanceResult] = await Promise.all([
+        supabase.from('classrooms').select('grade_label,section_name')
+            .eq('institution_id', institutionId).eq('id', enrollment.classroom_id).maybeSingle(),
+        supabase.from('academic_years').select('name')
+            .eq('institution_id', institutionId).eq('id', enrollment.academic_year_id).maybeSingle(),
+        supabase.from('student_updates').select('id,update_type,title,body,priority,created_at')
             .eq('institution_id', institutionId).eq('student_id', studentId)
             .order('created_at', { ascending: false }).limit(30),
-        supabase.from('attendance_events')
-            .select('id,event_type,occurred_at,notes')
+        supabase.from('attendance_events').select('id,event_type,occurred_at,notes')
             .eq('institution_id', institutionId).eq('student_id', studentId)
             .order('occurred_at', { ascending: false }).limit(30),
     ]);
-    const classroom = first(enrollment.classrooms);
-    const academicYear = first(enrollment.academic_years);
+
     return {
         ...student,
         academic_year_id: enrollment.academic_year_id,
         fullName: [student.first_names, student.last_names].filter(Boolean).join(' '),
-        classroomName: [classroom?.grade_label, classroom?.section_name].filter(Boolean).join(' '),
-        academicYearName: academicYear?.name || '',
+        classroomName: [classroomResult.data?.grade_label, classroomResult.data?.section_name].filter(Boolean).join(' '),
+        academicYearName: yearResult.data?.name || '',
         enrolledAt: enrollment.enrolled_at,
         guardians: null,
         updates: updatesResult.data || [],
         attendance: attendanceResult.data || [],
         updatesError: updatesResult.error?.message || '',
         attendanceError: attendanceResult.error?.message || '',
+        classroomError: classroomResult.error?.message || '',
+        academicYearError: yearResult.error?.message || '',
     };
 }
 
