@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Bell, CalendarDays, ClipboardPenLine, FileText, GraduationCap, Mail, Phone, UserRound } from 'lucide-react-native';
 import Screen from '../../components/ui/Screen';
