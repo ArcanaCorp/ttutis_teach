@@ -45,7 +45,7 @@ export default function SelectField({
                 <View style={styles.menu}>
                     {searchableHint ? <TextApp size="xs" color={theme.colors.text.tertiary} style={styles.hint}>{searchableHint}</TextApp> : null}
                     {selected ? <View style={styles.selectedHeader}>
-                        <TextApp size="2xs" color={theme.colors.text.tertiary}>SELECCIONADO</TextApp>
+                        <TextApp size="xs" color={theme.colors.text.tertiary}>SELECCIONADO</TextApp>
                         <View style={styles.selectedValue}>
                             <TextApp size="sm" variant="semibold" style={{ flex: 1 }}>{selected.label}</TextApp>
                             <Check size={17} color={theme.colors.primary[700]} />
