@@ -20,11 +20,6 @@ const types = [
     { value: 'RECOMMENDATION', label: 'Seguimiento', description: 'Recomendación' },
     { value: 'NOTIFICATION', label: 'Notificación', description: 'Aviso puntual' },
 ];
-const targets = [
-    { value: 'STUDENTS', label: 'Alumnos', icon: UserRound },
-    { value: 'CLASSROOM', label: 'Salón', icon: GraduationCap },
-    { value: 'INSTITUTION', label: 'Institución', icon: Users },
-];
 const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 const priorityLabel = (value) => priorities.find((item) => item.value === value)?.label || value;
 const typeLabel = (value) => types.find((item) => item.value === value)?.label || value;
