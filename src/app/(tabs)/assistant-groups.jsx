@@ -28,7 +28,15 @@ export default function AssistantGroups() {
         try { setGroups(await getAssistantGroups({ institutionId, membershipId })); }
         catch (e) { setError(e.message || 'No se pudieron cargar tus grupos.'); }
     }, [institutionId, membershipId]);
-    useEffect(() => { let active = true; load().finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [load]);
+    useEffect(() => {
+        let active = true;
+        const run = async () => {
+            await load();
+            if (active) setLoading(false);
+        };
+        run();
+        return () => { active = false; };
+    }, [load]);
     const filtered = useMemo(() => groups.map((group) => {
         const groupMatches = normalize(group.label).includes(normalize(search));
         return { ...group, students: !search || groupMatches ? group.students : group.students.filter((student) => normalize([student.name, student.code].join(' ')).includes(normalize(search))) };
