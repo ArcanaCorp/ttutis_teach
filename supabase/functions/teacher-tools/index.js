@@ -473,7 +473,7 @@ function classifyAttendance(clock, schedule) {
     if (!p?.start || !p?.end || !l?.start || !l?.end || !a?.from) return null;
     if (clock >= p.start && clock < p.end) return 'PUNCTUAL';
     if (clock >= l.start && clock < l.end) return 'LATE';
-    if (clock >= a.from) return 'ABSENCE';
+    if (clock >= a.from) return 'AFTER_WINDOW';
     return 'CLOSED';
 }
 async function handleAssistantAttendance(admin, caller, payload) {
@@ -515,7 +515,8 @@ async function handleAssistantAttendance(admin, caller, payload) {
         const now = new Date();
         const { date, time } = localDateAndTime(institution.timezone || 'America/Lima', now);
         const status = classifyAttendance(time, schedule);
-        if (status === 'CLOSED') return errorResponse('La ventana de asistencia todavía no ha comenzado.', 409);
+        if (status === 'AFTER_WINDOW') return errorResponse('La ventana de asistencia ya terminó. El escaneo QR no puede registrar ingresos fuera del horario habilitado.', 409);
+        if (status === 'CLOSED') return errorResponse('La ventana de asistencia no está abierta en este momento.', 409);
         if (!status) return errorResponse('La configuración de horarios de este nivel está incompleta.', 409);
         const key = `assistant_qr_entry:${student.id}:${date}`;
         const fields = 'id,attendance_status,attendance_local_date,occurred_at,justification_status,justification_notes';
