@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router, useIsFocused } from 'expo-router';
@@ -14,14 +14,17 @@ export default function QrScanner() {
     const [scanned, setScanned] = useState(false);
     const [busy, setBusy] = useState(false);
     const [torch, setTorch] = useState(false);
+    const scanLock = useRef(false);
     const focused = useIsFocused();
 
     async function onBarcodeScanned(result) {
-        if (scanned || busy) return;
+        if (scanLock.current || scanned || busy) return;
+        scanLock.current = true;
         setScanned(true);
         setBusy(true);
         try {
             const resolved = await resolveStudentQr(result.data);
+            if (!resolved?.student?.id) throw new Error('El QR se leyó, pero no recibimos los datos del alumno.');
             router.push({
                 pathname: '/observation',
                 params: {
@@ -32,7 +35,8 @@ export default function QrScanner() {
                 },
             });
         } catch (error) {
-            Alert.alert('No se pudo leer el QR', error.message, [{ text: 'Volver a escanear', onPress: () => setScanned(false) }]);
+            scanLock.current = false;
+            Alert.alert('No se pudo abrir el registro', error.message, [{ text: 'Volver a escanear', onPress: () => setScanned(false) }]);
         } finally {
             setBusy(false);
         }
