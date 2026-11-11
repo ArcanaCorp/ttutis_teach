@@ -40,6 +40,9 @@ export default function AssistantQrScanner() {
     const queueWrite = useRef(Promise.resolve());
     const pendingScans = useRef(new Set());
     const recentScans = useRef(new Map());
+    // Evita volver a enviar el mismo QR durante esta sesión de cámara,
+    // incluso después de que el servidor haya quitado el registro de la cola.
+    const completedScans = useRef(new Set());
     const sequence = useRef(0);
     const toastSequence = useRef(0);
     const syncing = useRef(false);
@@ -130,6 +133,11 @@ export default function AssistantQrScanner() {
 
                 try {
                     const response = await recordAssistantAttendance(item.value);
+
+                    // El servidor ya respondió: este QR queda atendido durante
+                    // la sesión actual y no debe generar otro evento al seguir en cámara.
+                    completedScans.current.add(item.value);
+                    recentScans.current.set(item.value, Date.now());
 
                     // Solo se elimina de la cola después de una respuesta exitosa.
                     await persistQueue(
@@ -262,10 +270,15 @@ export default function AssistantQrScanner() {
 
         // Evita duplicados simultáneos, ya en cola o repetidos inmediatamente.
         if (
-            pendingScans.current.has(value)
+            completedScans.current.has(value)
+            || pendingScans.current.has(value)
             || queueRef.current.some((item) => item.value === value)
             || (previous && now - previous < 1500)
         ) {
+            console.log(
+                '[ASSISTANT_QR] duplicate_scan_ignored',
+                JSON.stringify({ timestamp: new Date(now).toISOString() }),
+            );
             return;
         }
 
