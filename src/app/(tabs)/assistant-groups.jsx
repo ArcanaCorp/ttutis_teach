@@ -6,6 +6,7 @@ import Screen from '../../components/ui/Screen';
 import TextApp from '../../components/ui/TextApp';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import SelectField from '../../components/ui/SelectField';
 import { useAuth } from '../../context/AuthContext';
 import { getAssistantStudents } from '../../services/assistantServices';
 import { theme } from '../../constants/theme';
@@ -44,12 +45,24 @@ export default function AssistantGroups() {
     }, [load]);
 
     const levels = useMemo(() => [...new Set(classrooms.map((item) => item.level).filter(Boolean))].sort(), [classrooms]);
-    const filtered = useMemo(() => students.filter((student) => {
-        const matchesSearch = !search || normalize([student.full_name, student.student_code, student.classroom_name].join(' ')).includes(normalize(search));
-        const matchesClass = classroomFilter === 'ALL' || student.classroom_id === classroomFilter;
-        const matchesLevel = levelFilter === 'ALL' || student.level === levelFilter;
-        return matchesSearch && matchesClass && matchesLevel;
-    }), [students, search, classroomFilter, levelFilter]);
+    const hasStudentCriteria = search.trim().length >= 2 || classroomFilter !== 'ALL' || levelFilter !== 'ALL';
+    const filtered = useMemo(() => {
+        if (!hasStudentCriteria) return [];
+        return students.filter((student) => {
+            const matchesSearch = !search.trim() || normalize([student.full_name, student.student_code, student.classroom_name].join(' ')).includes(normalize(search));
+            const matchesClass = classroomFilter === 'ALL' || student.classroom_id === classroomFilter;
+            const matchesLevel = levelFilter === 'ALL' || student.level === levelFilter;
+            return matchesSearch && matchesClass && matchesLevel;
+        }).slice(0, 50);
+    }, [students, search, classroomFilter, levelFilter, hasStudentCriteria]);
+    const classroomOptions = useMemo(() => [
+        { value: 'ALL', label: 'Todos los salones' },
+        ...classrooms.map((item) => ({ value: item.id, label: [item.label, item.level].filter(Boolean).join(' · ') })),
+    ], [classrooms]);
+    const levelOptions = useMemo(() => [
+        { value: 'ALL', label: 'Todos los niveles' },
+        ...levels.map((level) => ({ value: level, label: level })),
+    ], [levels]);
 
     async function refresh() { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } }
     function toggleStudent(id) { setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); }
@@ -82,22 +95,12 @@ export default function AssistantGroups() {
                     <View style={s.metric}><Check size={18} color={theme.colors.primary[700]} /><TextApp size="lg" variant="bold">{selected.length}</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>Seleccionados</TextApp></View>
                 </View>
                 <View style={s.filters}>
-                    <TextApp size="xs" variant="semibold" color={theme.colors.text.secondary}>FILTRAR POR SALÓN</TextApp>
-                    <View style={s.chips}>
-                        <Pressable onPress={() => setClassroomFilter('ALL')} style={[s.chip, classroomFilter === 'ALL' && s.chipActive]}><TextApp size="xs" variant={classroomFilter === 'ALL' ? 'semibold' : 'regular'}>Todos</TextApp></Pressable>
-                        {classrooms.map((item) => <Pressable key={item.id} onPress={() => setClassroomFilter(item.id)} style={[s.chip, classroomFilter === item.id && s.chipActive]}><TextApp size="xs" variant={classroomFilter === item.id ? 'semibold' : 'regular'}>{item.label}</TextApp></Pressable>)}
-                    </View>
-                    {!!levels.length && <>
-                        <TextApp size="xs" variant="semibold" color={theme.colors.text.secondary}>NIVEL</TextApp>
-                        <View style={s.chips}>
-                            <Pressable onPress={() => setLevelFilter('ALL')} style={[s.chip, levelFilter === 'ALL' && s.chipActive]}><TextApp size="xs">Todos</TextApp></Pressable>
-                            {levels.map((level) => <Pressable key={level} onPress={() => setLevelFilter(level)} style={[s.chip, levelFilter === level && s.chipActive]}><TextApp size="xs">{level}</TextApp></Pressable>)}
-                        </View>
-                    </>}
+                    <SelectField label="Salón" value={classroomFilter} onChange={setClassroomFilter} options={classroomOptions} />
+                    <SelectField label="Nivel" value={levelFilter} onChange={setLevelFilter} options={levelOptions} />
                 </View>
                 <View style={s.listHeader}>
-                    <View><TextApp size="md" variant="semibold">Alumnos</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>{filtered.length} resultados</TextApp></View>
-                    <Pressable onPress={selectVisible}><TextApp size="xs" variant="semibold" color={theme.colors.primary[700]}>Seleccionar visibles</TextApp></Pressable>
+                    <View><TextApp size="md" variant="semibold">Alumnos</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>{hasStudentCriteria ? `${filtered.length} resultados mostrados` : "Busca o selecciona filtros para consultar"}</TextApp></View>
+                    {hasStudentCriteria && filtered.length > 0 ? <Pressable onPress={selectVisible}><TextApp size="xs" variant="semibold" color={theme.colors.primary[700]}>Seleccionar visibles</TextApp></Pressable> : null}
                 </View>
                 <View style={s.list}>
                     {filtered.map((student) => {
@@ -114,7 +117,7 @@ export default function AssistantGroups() {
                             </Pressable>
                         </View>;
                     })}
-                    {!filtered.length && <View style={s.empty}><Search size={26} color={theme.colors.primary[700]} /><TextApp size="md" variant="semibold">{students.length ? 'Sin resultados' : 'No hay alumnos activos'}</TextApp><TextApp size="sm" color={theme.colors.text.secondary} align="center">{students.length ? 'Prueba con otro nombre, código o filtro.' : 'Cuando existan matrículas activas, aparecerán aquí.'}</TextApp></View>}
+                    {!filtered.length && <View style={s.empty}><Search size={26} color={theme.colors.primary[700]} /><TextApp size="md" variant="semibold">{!students.length ? 'No hay alumnos activos' : hasStudentCriteria ? 'Sin resultados' : 'Busca un alumno'}</TextApp><TextApp size="sm" color={theme.colors.text.secondary} align="center">{!students.length ? 'Cuando existan matrículas activas, aparecerán aquí.' : hasStudentCriteria ? 'Prueba con otro nombre, código o filtro.' : 'Escribe al menos 2 caracteres o selecciona un salón o nivel. Mostraremos hasta 50 coincidencias.'}</TextApp></View>}
                 </View>
                 {!!selected.length && <View style={s.bottomAction}>
                     <Button fullWidth icon={Send} onPress={createForSelection}>Crear comunicación para {selected.length} alumno(s)</Button>
@@ -131,9 +134,7 @@ const s=StyleSheet.create({
     metrics:{marginHorizontal:20,marginTop:16,flexDirection:'row',gap:8},
     metric:{flex:1,padding:12,borderRadius:15,backgroundColor:'#fff',borderWidth:1,borderColor:theme.colors.border.subtle,alignItems:'center',gap:4},
     filters:{paddingHorizontal:20,paddingTop:18,gap:9},
-    chips:{flexDirection:'row',flexWrap:'wrap',gap:7},
-    chip:{paddingHorizontal:11,paddingVertical:8,borderRadius:18,borderWidth:1,borderColor:theme.colors.border.subtle,backgroundColor:'#fff'},
-    chipActive:{borderColor:theme.colors.primary[600],backgroundColor:theme.colors.primary[50]},
+    filterRow:{flexDirection:'row',gap:8},
     listHeader:{paddingHorizontal:20,paddingTop:19,paddingBottom:9,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
     list:{paddingHorizontal:20,gap:8,paddingBottom:22},
     studentCard:{padding:10,borderRadius:15,backgroundColor:'#fff',borderWidth:1,borderColor:theme.colors.border.subtle,flexDirection:'row',alignItems:'center',gap:10},
