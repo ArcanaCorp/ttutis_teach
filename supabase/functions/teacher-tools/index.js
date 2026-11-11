@@ -271,6 +271,157 @@ async function handleClassAnnouncements(admin, caller, payload) {
 }
 
 
+
+async function assistantMembership(caller, payload) {
+    const membershipId = typeof payload?.membershipId === 'string' ? payload.membershipId : '';
+    return caller.memberships.find((item) => item.role === 'ASSISTANT' && item.id === membershipId) || null;
+}
+
+async function handleAssistantStudents(admin, caller, payload) {
+    const membership = await assistantMembership(caller, payload);
+    if (!membership) return errorResponse('No tienes una sesión auxiliar activa para esta institución.', 403);
+    const { data: enrollments, error: enrollmentError } = await admin.from('enrollments')
+        .select('id,student_id,classroom_id,academic_year_id')
+        .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').limit(5000);
+    if (enrollmentError) return errorResponse('No se pudieron consultar las matrículas institucionales.', 500);
+    const studentIds = [...new Set((enrollments || []).map((item) => item.student_id))];
+    const classroomIds = [...new Set((enrollments || []).map((item) => item.classroom_id))];
+    if (!studentIds.length || !classroomIds.length) return json({ students: [], classrooms: [] });
+    const [{ data: students, error: studentsError }, { data: classrooms, error: classroomsError }] = await Promise.all([
+        admin.from('students').select('id,first_names,last_names,student_code,status')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', studentIds),
+        admin.from('classrooms').select('id,academic_year_id,level,grade_label,section_name,status')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', classroomIds),
+    ]);
+    if (studentsError || classroomsError) return errorResponse('No se pudo completar la lista institucional de alumnos.', 500);
+    const studentMap = new Map((students || []).map((item) => [item.id, item]));
+    const classroomMap = new Map((classrooms || []).map((item) => [item.id, item]));
+    const unique = new Map();
+    for (const enrollment of enrollments || []) {
+        const student = studentMap.get(enrollment.student_id);
+        const classroom = classroomMap.get(enrollment.classroom_id);
+        if (!student || !classroom || unique.has(student.id)) continue;
+        unique.set(student.id, {
+            id: student.id,
+            first_names: student.first_names,
+            last_names: student.last_names,
+            full_name: [student.first_names, student.last_names].filter(Boolean).join(' '),
+            student_code: student.student_code || '',
+            enrollment_id: enrollment.id,
+            classroom_id: classroom.id,
+            classroom_name: [classroom.grade_label, classroom.section_name].filter(Boolean).join(' '),
+            level: classroom.level,
+            grade_label: classroom.grade_label,
+            section_name: classroom.section_name,
+            academic_year_id: enrollment.academic_year_id,
+        });
+    }
+    const classroomRows = (classrooms || []).map((item) => ({
+        id: item.id, level: item.level, grade_label: item.grade_label, section_name: item.section_name,
+        label: [item.grade_label, item.section_name].filter(Boolean).join(' '),
+    })).sort((a, b) => a.label.localeCompare(b.label, 'es'));
+    return json({ students: [...unique.values()].sort((a, b) => a.full_name.localeCompare(b.full_name, 'es')), classrooms: classroomRows });
+}
+
+async function handleAssistantReports(admin, caller, payload) {
+    const membership = await assistantMembership(caller, payload);
+    if (!membership) return errorResponse('No tienes una sesión auxiliar activa para esta institución.', 403);
+    const { data, error } = await admin.from('student_updates')
+        .select('id,title,body,priority,created_at,visible_from,update_type,student_id,classroom_id,students(first_names,last_names,student_code),classrooms(grade_label,section_name)')
+        .eq('institution_id', membership.institution_id).eq('author_membership_id', membership.id)
+        .in('update_type', ['REPORT','BEHAVIOR','CITATION','ANNOUNCEMENT','RECOMMENDATION','NOTIFICATION'])
+        .order('created_at', { ascending: false }).limit(300);
+    if (error) return errorResponse('No se pudieron consultar tus reportes y comunicaciones.', 500);
+    return json({ data: data || [] });
+}
+
+async function handleCreateAssistantCommunication(admin, caller, payload) {
+    const membership = await assistantMembership(caller, payload);
+    if (!membership) return errorResponse('No tienes una sesión auxiliar activa para esta institución.', 403);
+    const title = typeof payload?.title === 'string' ? payload.title.trim() : '';
+    const body = typeof payload?.body === 'string' ? payload.body.trim() : '';
+    const priority = payload?.priority || 'NORMAL';
+    const updateType = payload?.updateType;
+    const targetType = payload?.targetType;
+    if (title.length < 3 || title.length > 120 || !body || body.length > 3000) return errorResponse('El título debe tener entre 3 y 120 caracteres y el detalle no puede superar 3000 caracteres.');
+    if (!['LOW','NORMAL','HIGH','URGENT'].includes(priority)) return errorResponse('La prioridad seleccionada no es válida.');
+    if (!['REPORT','BEHAVIOR','CITATION','ANNOUNCEMENT','RECOMMENDATION','NOTIFICATION'].includes(updateType)) return errorResponse('El tipo de comunicación no es válido.');
+    if (!['STUDENTS','CLASSROOM','INSTITUTION'].includes(targetType)) return errorResponse('Selecciona destinatarios válidos.');
+
+    let rows = [];
+    if (targetType === 'STUDENTS') {
+        const ids = [...new Set(Array.isArray(payload?.studentIds) ? payload.studentIds.filter((id) => typeof id === 'string') : [])];
+        if (!ids.length || ids.length > 500) return errorResponse('Selecciona entre 1 y 500 alumnos.');
+        const { data: students, error } = await admin.from('students').select('id')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', ids);
+        if (error) return errorResponse('No se pudieron validar los alumnos seleccionados.', 500);
+        if ((students || []).length !== ids.length) return errorResponse('Uno o más alumnos no pertenecen a tu institución o ya no están activos.', 403);
+        const { data: enrollments, error: enrollmentError } = await admin.from('enrollments')
+            .select('student_id,classroom_id').eq('institution_id', membership.institution_id)
+            .eq('status', 'ACTIVE').in('student_id', ids);
+        if (enrollmentError) return errorResponse('No se pudieron validar las matrículas de los alumnos.', 500);
+        const activeClassrooms = new Set();
+        const classroomIds = [...new Set((enrollments || []).map((item) => item.classroom_id))];
+        if (classroomIds.length) {
+            const { data: classrooms } = await admin.from('classrooms').select('id')
+                .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', classroomIds);
+            (classrooms || []).forEach((item) => activeClassrooms.add(item.id));
+        }
+        const classroomByStudent = new Map();
+        (enrollments || []).forEach((item) => {
+            if (activeClassrooms.has(item.classroom_id) && !classroomByStudent.has(item.student_id)) classroomByStudent.set(item.student_id, item.classroom_id);
+        });
+        rows = ids.map((id) => ({ student_id: id, classroom_id: classroomByStudent.get(id) || null }));
+    } else if (targetType === 'CLASSROOM') {
+        const classroomId = payload?.classroomId;
+        if (typeof classroomId !== 'string') return errorResponse('Selecciona un salón válido.');
+        const { data: classroom, error } = await admin.from('classrooms').select('id')
+            .eq('id', classroomId).eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').maybeSingle();
+        if (error || !classroom) return errorResponse('El salón no pertenece a tu institución o no está activo.', 403);
+        rows = [{ student_id: null, classroom_id: classroom.id }];
+    } else if (updateType === 'ANNOUNCEMENT') {
+        rows = [{ student_id: null, classroom_id: null }];
+    } else {
+        const { data: students, error } = await admin.from('students').select('id')
+            .eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').limit(5000);
+        if (error) return errorResponse('No se pudo consultar a los alumnos de la institución.', 500);
+        const ids = (students || []).map((item) => item.id);
+        if (!ids.length) return errorResponse('No hay alumnos activos para registrar esta comunicación.');
+        const { data: enrollments, error: enrollmentError } = await admin.from('enrollments')
+            .select('student_id,classroom_id').eq('institution_id', membership.institution_id)
+            .eq('status', 'ACTIVE').in('student_id', ids);
+        if (enrollmentError) return errorResponse('No se pudieron consultar las matrículas institucionales.', 500);
+        const classroomIds = [...new Set((enrollments || []).map((item) => item.classroom_id))];
+        const { data: classrooms } = classroomIds.length
+            ? await admin.from('classrooms').select('id').eq('institution_id', membership.institution_id).eq('status', 'ACTIVE').in('id', classroomIds)
+            : { data: [] };
+        const activeClassrooms = new Set((classrooms || []).map((item) => item.id));
+        const classroomByStudent = new Map();
+        (enrollments || []).forEach((item) => {
+            if (activeClassrooms.has(item.classroom_id) && !classroomByStudent.has(item.student_id)) classroomByStudent.set(item.student_id, item.classroom_id);
+        });
+        rows = ids.map((id) => ({ student_id: id, classroom_id: classroomByStudent.get(id) || null }));
+    }
+    if (!rows.length) return errorResponse('No encontramos destinatarios activos para esta comunicación.');
+    const insertRows = rows.map((target) => ({
+        institution_id: membership.institution_id,
+        author_membership_id: membership.id,
+        student_id: target.student_id,
+        classroom_id: target.classroom_id,
+        update_type: updateType,
+        title,
+        body,
+        priority,
+    }));
+    const { data, error } = await admin.from('student_updates').insert(insertRows)
+        .select('id,title,update_type,priority,created_at,student_id,classroom_id');
+    if (error) {
+        console.error('Assistant communication insert failed.', error.message);
+        return errorResponse('No se pudo guardar la comunicación. No se envió ninguna notificación push.', 409);
+    }
+    return json({ data: data || [], recipientCount: rows.length, targetType }, 201);
+}
+
 function localDateAndTime(timeZone, instant = new Date()) {
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(instant);
     const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
@@ -405,6 +556,9 @@ Deno.serve(async (request) => {
     if (!caller) return errorResponse('Inicia sesión para continuar.', 401);
 
     try {
+        if (payload?.action === 'assistant_list_students') return await handleAssistantStudents(admin, caller, payload);
+        if (payload?.action === 'assistant_list_reports') return await handleAssistantReports(admin, caller, payload);
+        if (payload?.action === 'assistant_create_communication') return await handleCreateAssistantCommunication(admin, caller, payload);
         if (payload?.action === 'resolve_qr') return await handleResolveQr(admin, caller, payload);
         if (payload?.action === 'record_assistant_attendance') return await handleAssistantAttendance(admin, caller, payload);
         if (payload?.action === 'justify_assistant_absence') return await handleJustifyAssistantAbsence(admin, caller, payload);
