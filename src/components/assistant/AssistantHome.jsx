@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
-import { CalendarDays, ClipboardList, FileText, QrCode, Users, ChevronRight, Clock3 } from 'lucide-react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { CalendarDays, FileText, QrCode, Users, ChevronRight, Clock3 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import Screen from '../ui/Screen';
 import TextApp from '../ui/TextApp';
