@@ -306,12 +306,8 @@ async function handleModernCourseAnnouncements(admin, membership, payload) {
 }
 
 async function handleClassAnnouncements(admin, caller, payload) {
-    const { classroomId, action } = payload || {};
-    if (payload?.sectionId) {
-        const modernMembership = await assignedModernTeacher(admin, caller, payload);
-        if (!modernMembership) return errorResponse('Tu cuenta docente no tiene asignado este curso.', 403);
-        return handleModernCourseAnnouncements(admin, modernMembership, payload);
-    }
+    const classroomId = payload?.classroomId || payload?.sectionId;
+    const { action } = payload || {};
     if (!classroomId) return errorResponse('El aula no es válida.');
     const membership = await assignedMembership(admin, caller, classroomId);
     if (!membership) return errorResponse('No tienes permiso para ver los anuncios de esta aula.', 403);
@@ -335,7 +331,6 @@ async function handleClassAnnouncements(admin, caller, payload) {
     const { data, error } = await admin.from('student_updates').insert({
         institution_id: membership.institution_id,
         author_membership_id: membership.id,
-        audience_type: 'CLASSROOM',
         academic_year_id: classroom.academic_year_id,
         classroom_id: classroom.id,
         update_type: 'ANNOUNCEMENT',
