@@ -25,12 +25,17 @@ function formatDate(value) {
 }
 
 export default function ClassDetail() {
-    const { id } = useLocalSearchParams();
+    const { id, initialTab } = useLocalSearchParams();
     const { staff } = useAuth();
     const [detail, setDetail] = useState(null);
     const [assessments, setAssessments] = useState([]);
     const [announcements, setAnnouncements] = useState([]);
+    const [announcementError, setAnnouncementError] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
     const [tab, setTab] = useState('info');
+    useEffect(() => {
+        if (['info', 'students', 'announcements', 'grades'].includes(String(initialTab || ''))) setTab(String(initialTab));
+    }, [initialTab]);
     const [title, setTitle] = useState('');
     const [body, setBody] = useState('');
     const [loading, setLoading] = useState(true);
@@ -55,18 +60,31 @@ export default function ClassDetail() {
         return () => { active = false; };
     }, [load]);
 
-    useEffect(() => {
-        if (tab !== 'announcements' || !detail?.classroomId) return undefined;
-        let active = true;
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- loading indicator is tied to this tab's network request.
+    const loadAnnouncements = useCallback(async () => {
+        if (!detail?.classroomId) return;
         setLoadingAnnouncements(true);
-        getClassAnnouncements(detail.classroomId, { sectionId: detail.schema === 'modern' ? detail.classroomId : undefined, courseOfferingId: detail.schema === 'modern' ? detail.courseAssignmentId : undefined, academicYearId: detail.schema === 'modern' ? detail.academicYearId : undefined }).then((items) => { if (active) setAnnouncements(items); })
-            .catch((error) => { if (active) Alert.alert('Anuncios', error.message); })
-            .finally(() => { if (active) setLoadingAnnouncements(false); });
-        return () => { active = false; };
-    }, [tab, detail?.classroomId, detail?.schema, detail?.courseAssignmentId, detail?.academicYearId]);
+        setAnnouncementError('');
+        try {
+            const items = await getClassAnnouncements(detail.classroomId);
+            setAnnouncements(items);
+        } catch (error) {
+            setAnnouncementError(error.message || 'No se pudieron cargar los anuncios.');
+        } finally {
+            setLoadingAnnouncements(false);
+        }
+    }, [detail?.classroomId]);
+
+    useEffect(() => {
+        if (tab === 'announcements' && detail?.classroomId) loadAnnouncements();
+    }, [tab, detail?.classroomId, loadAnnouncements]);
 
     const students = useMemo(() => detail?.students || [], [detail]);
+    const filteredStudents = useMemo(() => {
+        const query = searchTerm.trim().toLocaleLowerCase('es');
+        if (!query) return students;
+        return students.filter((student) => [student.name, student.code, student.firstNames, student.lastNames]
+            .filter(Boolean).join(' ').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('es').includes(query.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')));
+    }, [students, searchTerm]);
 
     async function refresh() {
         setRefreshing(true);
@@ -81,14 +99,12 @@ export default function ClassDetail() {
         setSavingAnnouncement(true);
         try {
             const item = await createClassAnnouncement({
-                classroomId: detail.schema === 'legacy' ? detail.classroomId : undefined,
-                sectionId: detail.schema === 'modern' ? detail.classroomId : undefined,
-                courseOfferingId: detail.schema === 'modern' ? detail.courseAssignmentId : undefined,
-                academicYearId: detail.academicYearId,
+                classroomId: detail.classroomId,
                 title,
                 body,
             });
             setAnnouncements((current) => [item, ...current]);
+            setAnnouncementError('');
             setTitle('');
             setBody('');
             setShowAnnouncementForm(false);
@@ -129,15 +145,38 @@ export default function ClassDetail() {
             ) : tab === 'students' ? (
                 <View style={styles.content}>
                     <TextApp size="lg" variant="semibold">Alumnos ({students.length})</TextApp>
-                    {students.length ? students.map((student, index) => (
-                        <View key={student.id} style={styles.studentRow}><View style={styles.number}><TextApp size="xs" variant="semibold">{index + 1}</TextApp></View><View style={{ flex: 1, gap: 2 }}><TextApp size="sm" variant="medium">{student.name}</TextApp><TextApp size="xs" color={theme.colors.text.tertiary}>{student.code || 'Sin código'}</TextApp></View></View>
-                    )) : <View style={styles.empty}><TextApp size="sm" color={theme.colors.text.secondary}>No hay alumnos matriculados en esta aula.</TextApp></View>}
+                    <Input placeholder="Buscar por nombre, apellido o código" value={searchTerm} onChangeText={setSearchTerm} />
+                    {filteredStudents.length ? filteredStudents.map((student, index) => (
+                        <Pressable key={student.id} style={styles.studentRow} onPress={() => router.push({
+                            pathname: '/student/[id]',
+                            params: {
+                                id: student.id,
+                                classroomId: detail.classroomId,
+                                academicYearId: detail.academicYearId,
+                                classroomName: detail.section,
+                                scheduleId: String(id),
+                                isTutor: String(Boolean(detail.isTutor)),
+                                studentName: student.name,
+                                studentCode: student.code || '',
+                            },
+                        })} accessibilityRole="button" accessibilityLabel={'Ver ficha de ' + student.name}>
+                            <View style={styles.number}><TextApp size="xs" variant="semibold">{index + 1}</TextApp></View>
+                            <View style={{ flex: 1, gap: 2 }}><TextApp size="sm" variant="medium">{student.name}</TextApp><TextApp size="xs" color={theme.colors.text.tertiary}>{student.code || 'Sin código'}</TextApp></View>
+                            <TextApp size="xs" color={theme.colors.primary[800]}>Ver ficha</TextApp>
+                        </Pressable>
+                    )) : <View style={styles.empty}><TextApp size="sm" color={theme.colors.text.secondary}>{students.length ? 'No encontramos alumnos con esa búsqueda.' : 'No hay alumnos matriculados en esta aula.'}</TextApp></View>}
                 </View>
             ) : tab === 'announcements' ? (
                 <View style={styles.content}>
                     <View style={styles.sectionHeading}><View style={{ flex: 1 }}><TextApp size="lg" variant="semibold">Anuncios del curso</TextApp><TextApp size="xs" color={theme.colors.text.secondary}>Mensajes visibles para el aula</TextApp></View><Button size="sm" onPress={() => setShowAnnouncementForm((value) => !value)}>{showAnnouncementForm ? 'Cerrar' : 'Nuevo'}</Button></View>
                     {showAnnouncementForm && <View style={styles.form}><TextApp size="md" variant="semibold">Publicar anuncio</TextApp><Input label="Título" placeholder="Ej. Material para la próxima clase" value={title} onChangeText={setTitle} maxLength={120} /><Input label="Mensaje" placeholder="Escribe la noticia para alumnos y familias" value={body} onChangeText={setBody} multiline numberOfLines={4} minHeight={100} maxLength={3000} showCharacterCount /><Button fullWidth icon={Save} loading={savingAnnouncement} onPress={publishAnnouncement}>Publicar para el curso</Button></View>}
-                    {loadingAnnouncements ? <ActivityIndicator color={theme.colors.primary[700]} style={{ padding: 24 }} /> : announcements.length ? announcements.map((announcement) => (
+                    {loadingAnnouncements ? <ActivityIndicator color={theme.colors.primary[700]} style={{ padding: 24 }} /> : announcementError ? (
+                        <View style={styles.empty}>
+                            <Megaphone size={22} color={theme.colors.primary[700]} />
+                            <TextApp size="sm" color={theme.colors.text.secondary} align="center">{announcementError}</TextApp>
+                            <Button size="sm" variant="outline" onPress={loadAnnouncements}>Reintentar</Button>
+                        </View>
+                    ) : announcements.length ? announcements.map((announcement) => (
                         <View key={announcement.id} style={styles.announcement}><View style={styles.announcementIcon}><Bell size={17} color={theme.colors.primary[800]} /></View><View style={{ flex: 1, gap: 5 }}><TextApp size="sm" variant="semibold">{announcement.title}</TextApp><TextApp size="sm" color={theme.colors.text.secondary}>{announcement.body}</TextApp><TextApp size="xs" color={theme.colors.text.tertiary}>{formatDate(announcement.visible_from || announcement.created_at)}</TextApp></View></View>
                     )) : <View style={styles.empty}><Megaphone size={22} color={theme.colors.primary[700]} /><TextApp size="sm" color={theme.colors.text.secondary}>Todavía no hay anuncios. Publica el primero para este curso.</TextApp></View>}
                 </View>
