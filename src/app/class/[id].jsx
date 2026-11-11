@@ -83,7 +83,7 @@ export default function ClassDetail() {
         const query = searchTerm.trim().toLocaleLowerCase('es');
         if (!query) return students;
         return students.filter((student) => [student.name, student.code, student.firstNames, student.lastNames]
-            .filter(Boolean).join(' ').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('es').includes(query.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')));
+            .filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').includes(query.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
     }, [students, searchTerm]);
 
     async function refresh() {
