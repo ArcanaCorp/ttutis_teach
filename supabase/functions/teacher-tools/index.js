@@ -130,19 +130,7 @@ async function getCaller(req, admin, publicKey) {
     const { data: memberships } = await admin.from('memberships')
         .select('id,institution_id,role,status').eq('profile_id', data.user.id)
         .eq('status', 'ACTIVE').in('role', ['TEACHER', 'ASSISTANT']);
-    const { data: modernRows } = await admin.from('institution_memberships')
-        .select('id,institution_id,status,membership_role_assignments(roles(code))')
-        .eq('profile_id', data.user.id).eq('status', 'ACTIVE');
-    const modernMemberships = (modernRows || []).filter((membership) => {
-        const assignments = Array.isArray(membership.membership_role_assignments)
-            ? membership.membership_role_assignments
-            : [membership.membership_role_assignments].filter(Boolean);
-        return assignments.some((assignment) => {
-            const role = Array.isArray(assignment.roles) ? assignment.roles[0] : assignment.roles;
-            return role?.code === 'TEACHER';
-        });
-    });
-    return { user: data.user, memberships: memberships || [], modernMemberships };
+    return { user: data.user, memberships: memberships || [] };
 }
 
 async function handleResolveQr(admin, caller, payload) {
@@ -269,7 +257,6 @@ async function handleClassAnnouncements(admin, caller, payload) {
     const { data, error } = await admin.from('student_updates').insert({
         institution_id: membership.institution_id,
         author_membership_id: membership.id,
-        academic_year_id: classroom.academic_year_id,
         classroom_id: classroom.id,
         update_type: 'ANNOUNCEMENT',
         title,
